@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon Condition="Exists('Resources\icon.ico')">Resources\icon.ico</ApplicationIcon>
+    <AssemblyName>TransLearn</AssemblyName>
+    <RootNamespace>TransLearn</RootNamespace>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MVVM Toolkit -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <!-- Database -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <!-- Audio -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Azure STT (선택적: Azure 엔진 사용 시 필요) -->
+    <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.41.1" />
+    <!-- Windows 내장 STT (System.Speech.Recognition) -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+    <!-- HTTP -->
+    <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
+    <!-- JSON -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- DeepL 번역 -->
+    <PackageReference Include="DeepL.net" Version="1.10.0" />
+    <!--
+      Windows Runtime APIs (OCR)
+      net8.0-windows10.0.22621.0 TFM에 WinRT API가 이미 내장되어 있어
+      Microsoft.Windows.SDK.Contracts 패키지 불필요 (NETSDK1130 충돌 원인)
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Python\models\my_distilbert.onnx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Python\nlp_analyzer.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Python\nlp_analyzer.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Resources\icon.ico" Condition="Exists('Resources\icon.ico')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+	<None Update="Python\tokenizer\**\*">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	</None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Python\dist\" />
+  </ItemGroup>
+</Project>

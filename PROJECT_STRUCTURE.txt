@@ -1,0 +1,298 @@
+================================================================
+TransLearn (트렌스런) — 프로젝트 구조 및 기능 설명서
+================================================================
+버전: 2025 캡스톤 디자인 | 팀장: 최종선 | 지도교수: 최종필
+스택: WPF(C#) .NET 8 · SQLite · NAudio · Azure/Windows STT
+
+================================================================
+1. 프로젝트 개요
+================================================================
+실시간 OCR/STT로 영어 텍스트를 캡처·번역하고,
+NLP 기반 단어장 + 적응형 퀴즈로 영어 학습을 지원하는 데스크톱 앱.
+
+주요 기능:
+  - OCR 캡처: 지정 화면 영역/창을 1초 간격으로 OCR → 번역
+  - STT 번역: WASAPI Loopback으로 재생음 캡처 → 음성 인식 → 번역
+  - 번역 기록: 모든 캡처 결과를 SQLite에 저장, 날짜별 조회
+  - 단어장: NLP(spaCy/폴백) 분석으로 단어 자동 추출, 👍👎 평가
+  - 퀴즈: LearnPriority 기반 적응형 빈칸 채우기 퀴즈
+
+================================================================
+2. 폴더 구조
+================================================================
+TransLearn/
+├── App.xaml(.cs)              앱 진입점, 전역 서비스 싱글턴 관리
+├── MainWindow.xaml(.cs)       탭 기반 메인 창 (네비게이션 허브)
+├── TransLearn.csproj          NuGet 의존성 + 빌드 설정
+│
+├── Models/
+│   └── Models.cs              모든 데이터 모델 정의 (아래 §3 참고)
+│
+├── Services/                  비즈니스 로직 계층 (UI 독립)
+│   ├── AudioCaptureService.cs WASAPI Loopback 오디오 캡처 + VU 미터 레벨
+│   ├── DatabaseService.cs     SQLite CRUD (WAL 모드, 스키마 마이그레이션)
+│   ├── NlpBridgeService.cs    Python NLP 서브프로세스 브릿지
+│   ├── OcrCaptureService.cs   화면 캡처 + Windows Runtime OCR
+│   ├── SecureKeyStorage.cs    DPAPI 암호화 키 저장소
+│   ├── SttService.cs          STT 퍼사드 (Windows/Azure 엔진 선택)
+│   ├── TextQualityFilter.cs   12단계 텍스트 품질 필터
+│   └── TranslationService.cs  Google/DeepL 번역 엔진
+│
+├── ViewModels/                MVVM ViewModel 계층
+│   ├── HistoryViewModel.cs    번역 기록 조회·검색·그룹핑
+│   ├── LearningViewModel.cs   NLP 분석, 단어장, 퀴즈 로직
+│   ├── OcrViewModel.cs        OCR 캡처 루프, Jaccard 중복 감지
+│   ├── SettingsViewModel.cs   API 키 관리, 번역/STT 엔진 설정
+│   └── SoundViewModel.cs      STT 파이프라인, VU 미터, Jaccard 필터
+│
+├── Views/                     WPF XAML 화면
+│   ├── HistoryView.xaml(.cs)  번역 기록 리스트 화면
+│   ├── LearningView.xaml(.cs) 단어장 + 퀴즈 화면
+│   ├── OcrRegionWindow.xaml   화면 영역 드래그 선택 오버레이
+│   ├── OcrView.xaml(.cs)      OCR 캡처 화면
+│   ├── SettingsView.xaml(.cs) 환경설정 화면
+│   └── SoundView.xaml(.cs)    오디오 STT 번역 화면
+│
+├── Converters/                XAML 바인딩 컨버터
+│   ├── ValueConverters.cs     Bool→Visibility, Bool→String, Running→Brush
+│   └── ExtraConverters.cs     NotEmptyVisibility, ProgressWidth(퀴즈 바)
+│
+├── Themes/
+│   └── DarkTheme.xaml         앱 전체 다크 테마 리소스 딕셔너리
+│
+├── Python/
+│   └── nlp_analyzer.py        NLP 분석 + 퀴즈 생성 (spaCy / 폴백)
+│
+└── Resources/
+    └── icon.ico               앱 아이콘
+
+================================================================
+3. 데이터 모델 (Models/Models.cs)
+================================================================
+
+■ TranslationRecord — 번역 기록 1건
+  Id             long      DB AUTO PRIMARY KEY
+  CapturedAt     DateTime  캡처 시각
+  OriginalText   string    원문 (영어)
+  Translated     string    번역문 (한국어)
+  CaptureType    enum      OCR=0 / Sound=1
+  AppName        string    대상 앱 이름 (Sound일 때)
+  QualityScore   double?   품질 점수 (예약)
+  IsLearned      bool      학습 완료 여부
+  IsAnalyzed     bool      NLP 분석 완료 여부 (재분석 방지)
+  // 계산 프로퍼티
+  CaptureTypeLabel  "🖥 OCR" / "🔊 Sound"
+  DateLabel, TimeLabel  날짜/시간 포맷 문자열
+
+■ CaptureType — 캡처 방식
+  OCR   = 0   (화면 OCR)
+  Sound = 1   (STT 음성 인식)
+
+■ WordEntry — 단어장 항목 1개
+  Id              long    DB AUTO PRIMARY KEY
+  Lemma           string  표제어 (소문자, 원형)
+  Pos             string  품사 (NOUN/VERB/ADJ/ADV/WORD)
+  Frequency       int     출현 빈도
+  GdexScore       double  GDEX 품질 점수 (0.0~1.0, 예문 품질)
+  ExampleSentence string  예문 원문
+  ExampleTranslated string? 예문 번역
+  ThumbsUp        int     👍 누적 횟수
+  ThumbsDown      int     👎 누적 횟수
+  // 계산 프로퍼티
+  UserScore       = ThumbsUp - ThumbsDown
+  LearnPriority   = Frequency × max(0.1, 1.0 + 0.3×UserScore)
+                    (높을수록 퀴즈에 자주 등장)
+  PosLabel        한국어 품사 이름
+  RatingLabel     "미평가" / "👍 +N" / "👎 -N" / "±0"
+
+■ QuizItem — 퀴즈 문제 1개 (런타임 전용, DB 미저장)
+  WordId    long          연결된 WordEntry.Id (평가 반영용)
+  Question  string        질문 텍스트
+  Sentence  string        빈칸 포함 예문 ("_____ 로 대체")
+  Correct   string        정답 단어
+  Choices   List<string>  선택지 4개 (정답 1 + 오답 3)
+  Pos       string        품사
+  UserAnswer bool?        사용자 답변 결과 (null=미답)
+
+================================================================
+4. 데이터베이스 스키마 (SQLite WAL 모드)
+================================================================
+파일 위치: %APPDATA%\TransLearn\translearn.db
+
+■ translations 테이블
+  Id           INTEGER PK AUTOINCREMENT
+  CapturedAt   TEXT    ISO8601 (strftime)
+  OriginalText TEXT    NOT NULL
+  Translated   TEXT    NOT NULL
+  CaptureType  INTEGER 0=OCR / 1=Sound
+  AppName      TEXT    DEFAULT ''
+  QualityScore REAL    NULL
+  IsLearned    INTEGER DEFAULT 0
+  IsAnalyzed   INTEGER DEFAULT 0  ← NLP 분석 완료 여부
+  인덱스: idx_type_date, idx_app_date, idx_analyzed
+
+■ learned_words 테이블
+  Id                INTEGER PK AUTOINCREMENT
+  Lemma             TEXT    UNIQUE (중복 방지)
+  Pos               TEXT    품사
+  Frequency         INTEGER DEFAULT 1
+  GdexScore         REAL    DEFAULT 0
+  ExampleId         INTEGER FK → translations.Id
+  ExampleTranslated TEXT    NULL
+  ThumbsUp          INTEGER DEFAULT 0
+  ThumbsDown        INTEGER DEFAULT 0
+  인덱스: idx_word_freq
+
+■ 마이그레이션 전략
+  TryAddColumnAsync() — 컬럼 없으면 ALTER TABLE로 추가
+  기존 DB 삭제 없이 스키마 확장 가능
+
+================================================================
+5. 서비스 상세 설명
+================================================================
+
+■ AudioCaptureService
+  - NAudio WasapiLoopbackCapture로 시스템 재생음 캡처
+  - DataAvailable 이벤트: (byte[], WaveFormat) — STT 파이프라인
+  - AudioLevelChanged 이벤트: double(0~1) — VU 미터 UI
+  - RMS 계산: IEEE Float32 샘플의 제곱 평균 제곱근, 6배 증폭
+  - 갱신 주기: 30ms 제한 (약 30fps, WPF 부하 방지)
+
+■ SttService (STT 퍼사드)
+  선택된 엔진에 따라 내부 구현체를 교체하는 퍼사드 패턴.
+  외부(SoundViewModel)에서는 항상 동일한 3개 이벤트로 결과 수신.
+
+  ① WindowsSttEngine (System.Speech.Recognition)
+     - 완전 무료, 오프라인, API 키 불필요
+     - 영어(미국) 언어 팩 필요
+     - DictationGrammar로 자유 형식 받아쓰기
+     - BlockingAudioStream: Producer/Consumer 패턴
+       FeedAudio(스레드) → Push(byte[]) → BlockingCollection
+       SpeechRecognitionEngine(스레드) → Read() 블로킹 대기
+
+  ② AzureSttEngine (CognitiveServices.Speech)
+     - 클라우드 처리, 높은 정확도
+     - 월 5시간 무료 티어 (F0 리소스)
+     - azure_key + azure_region 필요
+     - Channel<byte[]> + PushAudioInputStream 파이프라인
+
+  공통: AudioConverter.ToPcm16k()
+     WASAPI Float32/스테레오 → PCM 16kHz 16bit Mono 변환
+     (NAudio MediaFoundationResampler 사용)
+
+■ TextQualityFilter
+  12단계 검사 (§2 폴더 구조의 TextQualityFilter.cs 주석 참고)
+  CaptureSource(OCR/Sound)에 따라 일부 검사 다름:
+  - Sound 전용: 필러 단어 폐기 (um, uh, okay 등)
+  - OCR 전용: 기호/숫자만 포함된 줄 폐기
+
+■ NlpBridgeService
+  Python 서브프로세스로 nlp_analyzer.py 호출.
+  실행 우선순위: .exe 번들 → PATH python → C# 폴백
+  C# 폴백: 단순 빈도 분석, spaCy 없이도 단어장/퀴즈 사용 가능
+
+================================================================
+6. STT 엔진 선택 기능
+================================================================
+저장 위치: SecureKeyStorage("stt_engine")
+값:        "Windows" (기본) | "Azure"
+
+선택 흐름:
+  SettingsView → STT 엔진 ComboBox → SaveSttEngineCommand
+    → SttService.SelectedEngine 저장
+    → SttService.NotifyEngineChanged()
+    → SoundViewModel.SttInfoText / SttConfigured 갱신
+
+Windows STT 사용 조건:
+  Windows 10/11 + 영어(미국) 언어 팩 설치
+  (Windows 설정 → 시간 및 언어 → 음성 → 음성 언어)
+
+Azure STT 사용 조건:
+  azure_key + azure_region 저장 필요
+  무료 티어: Azure Portal → Cognitive Services → Speech → F0
+
+================================================================
+7. VU 미터 (오디오 레벨 시각화)
+================================================================
+데이터 흐름:
+  AudioCaptureService.CalculateRms()
+    → AudioLevelChanged(double 0~1)
+    → SoundViewModel.AudioLevel
+    → SoundView ProgressBar(VuMeterStyle).Value
+       └ PART_Indicator 가 자동으로 폭 계산
+
+구성 요소:
+  AudioLevel (0~1)     — 현재 RMS 레벨
+  AudioLevelWidth(px)  — AudioLevel × 220px (예비용)
+  PeakLevel (0~1)      — 피크 홀드 (100ms마다 0.025씩 감소)
+  PeakPosition(px)     — PeakLevel × 220px - 2 (바늘 위치)
+  AudioLevelDb         — 20×log10(AudioLevel) dB 텍스트
+
+그라디언트: 녹색(0%) → 연두(45%) → 노란(70%) → 주황(85%) → 빨강(100%)
+애니메이션: 캡처 중일 때 좌측 점(Ellipse) 깜박임 스토리보드
+
+================================================================
+8. Jaccard 유사도 중복 감지
+================================================================
+OCR(OcrViewModel)과 STT(SoundViewModel) 모두 동일 알고리즘 사용.
+
+Jaccard 유사도 = |교집합| / |합집합|
+  교집합: 두 문장의 공통 단어 토큰
+  합집합: 두 문장 합친 전체 단어 토큰
+
+임계값:
+  OCR: SimilarityThreshold = 0.70 (70% 이상 유사 → 폐기)
+  STT: JaccardThreshold    = 0.60 (60%, STT는 같은 내용을 약간 다르게 인식 가능)
+
+슬라이딩 윈도우:
+  최근 3개 문장과 비교. 하나라도 임계값 이상이면 폐기.
+
+토큰화: 소문자 변환 + 3자 이상 알파벳만 추출
+
+================================================================
+9. 학습 우선순위 알고리즘 (적응형 퀴즈)
+================================================================
+LearnPriority = Frequency × max(0.1, 1.0 + 0.3 × UserScore)
+
+  UserScore = ThumbsUp - ThumbsDown
+  UserScore 높음(잘 아는 단어) → LearnPriority 높아짐 → 퀴즈 자주 등장
+  UserScore 낮음(모르는 단어) → LearnPriority 낮아짐 → 퀴즈 드물게 등장
+  (오답 → 자동 👎 → UserScore 감소 → 다음번 덜 출제)
+
+퀴즈 생성:
+  Words.OrderBy(LearnPriority).Take(50) → 상위 50개 후보
+  후보 중 10개 랜덤 선택 → 오답 3개는 유사 빈도 단어로 구성
+
+================================================================
+10. API 키 보안
+================================================================
+저장 방식: Windows DPAPI (Data Protection API)
+  - System.Security.Cryptography.ProtectedData.Protect()
+  - 현재 Windows 계정으로만 복호화 가능
+  - 파일 위치: %APPDATA%\TransLearn\{keyname}.dat
+
+저장하는 키:
+  deepl_key     — DeepL API 키
+  azure_key     — Azure STT 구독 키
+  azure_region  — Azure 리전 (예: eastus)
+  stt_engine    — STT 엔진 선택 ("Windows" / "Azure")
+  provider      — 번역 공급자 ("Google (무료)" / "DeepL API")
+
+================================================================
+11. 의존 패키지 (NuGet)
+================================================================
+CommunityToolkit.Mvvm 8.3.2    — MVVM ObservableObject, RelayCommand
+Microsoft.Data.Sqlite 8.0.10   — SQLite ORM
+NAudio 2.2.1                   — WASAPI 오디오 캡처 + 리샘플링
+Microsoft.CognitiveServices.Speech 1.41.1  — Azure STT SDK
+System.Speech 8.0.0            — Windows 내장 STT
+System.Net.Http.Json 8.0.1     — HTTP 번역 API 호출
+System.Text.Json 8.0.5         — JSON 직렬화
+DeepL.net 1.10.0               — DeepL 번역 SDK
+
+================================================================
+12. 파일 저장 위치 (런타임)
+================================================================
+DB:      %APPDATA%\TransLearn\translearn.db
+API 키:  %APPDATA%\TransLearn\{keyname}.dat
+로그:    Debug.WriteLine (Visual Studio 출력 창)

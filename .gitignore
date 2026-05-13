@@ -399,3 +399,11 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Python Build & ML Models
+**/Python/build/
+**/Python/dist/
+**/*.exe
+**/*.spec
+__pycache__/
+*.pyc
