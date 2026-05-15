@@ -39,6 +39,10 @@ public class WordEntry
     public string Pos { get; set; } = "";
     public int Frequency { get; set; }
     public double GdexScore { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string DateLabel => CreatedAt.ToString("yyyy-MM-dd HH:mm");
+
     public string ExampleSentence { get; set; } = "";
     public string? ExampleTranslated { get; set; }
 
@@ -87,4 +91,20 @@ public class QuizItem
     public List<string> Choices { get; set; } = new();
     public string Pos { get; set; } = "";
     public bool? UserAnswer { get; set; }
+}
+
+public class MemoItem
+{
+    public long Id { get; set; }
+
+    // 사용자가 메모한 영어 단어 또는 문장
+    public string Content { get; set; } = "";
+
+    // 사용자가 자유롭게 적는 설명
+    public string Description { get; set; } = "";
+
+    // 작성/수정 날짜를 하나로 관리
+    public DateTime MemoDate { get; set; } = DateTime.Now;
+
+    public string DateLabel => MemoDate.ToString("yyyy-MM-dd HH:mm");
 }

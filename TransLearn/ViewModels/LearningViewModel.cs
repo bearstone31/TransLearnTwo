@@ -33,12 +33,25 @@ public partial class LearningViewModel : ObservableObject
 
     public ObservableCollection<WordEntry> Words { get; } = new();
     public ObservableCollection<QuizItem> Quiz { get; } = new();
+    public ObservableCollection<string> SourceApps { get; } = new();
 
     [ObservableProperty] private int _quizScore;
     [ObservableProperty] private int _quizTotal;
     [ObservableProperty] private bool _quizFinished;
     [ObservableProperty] private int _currentQuizIndex;
     [ObservableProperty] private QuizItem? _currentQuiz;
+    [ObservableProperty] private string _selectedSourceApp = "전체";
+
+    [ObservableProperty] private string _sortColumn = "Date";
+    [ObservableProperty] private bool _sortAscending = false;
+
+    private bool _isRefreshingSourceApps;
+    private bool _isLoadingWords;
+    public string DateSortArrow =>
+        SortColumn == "Date" ? (SortAscending ? "▲" : "▼") : "";
+
+    public string RatingSortArrow =>
+        SortColumn == "Rating" ? (SortAscending ? "▲" : "▼") : "";
 
     public LearningViewModel()
     {
@@ -46,6 +59,61 @@ public partial class LearningViewModel : ObservableObject
         StatusText = NlpAvailable
             ? "📊 학습 데이터 분석 준비 완료"
             : "⚠️ Python/spaCy 미설치. 기본 분석 모드로 동작합니다.";
+
+        SourceApps.Add("전체");
+        _ = RefreshSourceAppsAsync();
+    }
+
+    partial void OnSelectedSourceAppChanged(string value)
+    {
+        if (_isRefreshingSourceApps) return;
+        if (_isLoadingWords) return;
+
+        _ = LoadWordsCoreAsync();
+    }
+
+    public async Task RefreshSourceAppsAsync()
+    {
+        try
+        {
+            _isRefreshingSourceApps = true;
+
+            var current = SelectedSourceApp;
+
+            var apps = await App.Database.GetWordSourceAppsAsync();
+
+            SourceApps.Clear();
+            SourceApps.Add("전체");
+
+            foreach (var app in apps)
+            {
+                if (!SourceApps.Contains(app))
+                    SourceApps.Add(app);
+            }
+
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                SelectedSourceApp = "전체";
+            }
+            else if (SourceApps.Contains(current))
+            {
+                SelectedSourceApp = current;
+            }
+            else
+            {
+                // 현재 선택한 앱이 번역기록에서 전부 삭제된 경우
+                // 앱 목록에서도 사라졌으므로 전체로 돌림
+                SelectedSourceApp = "전체";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"앱 목록 로드 오류: {ex.Message}";
+        }
+        finally
+        {
+            _isRefreshingSourceApps = false;
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -97,15 +165,96 @@ public partial class LearningViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadWordsFromDbAsync()
     {
+        _isLoadingWords = true;
         IsLoading = true;
+
         try
         {
-            var data = await Task.Run(() => App.Database.GetWordEntriesAsync().GetAwaiter().GetResult());
-            Words.Clear();
-            foreach (var w in data) Words.Add(w);
-            StatusText = $"📚 {Words.Count}개 단어 로드됨";
+            // 단어장 새로고침할 때는 앱 목록도 새로고침
+            await RefreshSourceAppsAsync();
+
+            await LoadWordsCoreAsync();
         }
-        finally { IsLoading = false; }
+        catch (Exception ex)
+        {
+            StatusText = $"단어 로드 오류: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            _isLoadingWords = false;
+        }
+    }
+
+    private async Task LoadWordsCoreAsync()
+    {
+        try
+        {
+            var selectedApp = SelectedSourceApp;
+
+            var appFilter =
+                string.IsNullOrWhiteSpace(selectedApp) || selectedApp == "전체"
+                    ? null
+                    : selectedApp;
+
+            var data = await App.Database.GetWordEntriesAsync(appName: appFilter);
+
+            Words.Clear();
+
+            foreach (var w in data)
+                Words.Add(w);
+
+            ApplyWordSort();
+
+            StatusText = appFilter == null
+                ? $"📚 전체 단어 {Words.Count}개 로드됨"
+                : $"📚 [{selectedApp}] 단어 {Words.Count}개 로드됨";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"단어 로드 오류: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void SortWords(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortAscending = false;
+        }
+
+        ApplyWordSort();
+
+        OnPropertyChanged(nameof(DateSortArrow));
+        OnPropertyChanged(nameof(RatingSortArrow));
+    }
+
+    private void ApplyWordSort()
+    {
+        IEnumerable<WordEntry> sorted = SortColumn switch
+        {
+            "Date" => SortAscending
+                ? Words.OrderBy(w => w.CreatedAt)
+                : Words.OrderByDescending(w => w.CreatedAt),
+
+            "Rating" => SortAscending
+                ? Words.OrderBy(w => w.UserScore)
+                : Words.OrderByDescending(w => w.UserScore),
+
+            _ => Words
+        };
+
+        var sortedList = sorted.ToList();
+
+        Words.Clear();
+        foreach (var word in sortedList)
+            Words.Add(word);
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -131,7 +280,12 @@ public partial class LearningViewModel : ObservableObject
         if (thumbsUp) word.ThumbsUp++;
         else word.ThumbsDown++;
         var index = Words.IndexOf(word);
-        if (index >= 0) { Words.RemoveAt(index); Words.Insert(index, word); }
+        if (index >= 0)
+        {
+            Words.RemoveAt(index);
+            Words.Insert(index, word);
+        }
+
     }
 
     // ────────────────────────────────────────────────────────────────────

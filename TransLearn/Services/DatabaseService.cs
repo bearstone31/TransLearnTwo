@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS learned_words (
     Pos               TEXT    NOT NULL,
     Frequency         INTEGER NOT NULL DEFAULT 1,
     GdexScore         REAL    DEFAULT 0,
+    CreatedAt         TEXT,
     ExampleId         INTEGER REFERENCES translations(Id),
     ExampleTranslated TEXT    DEFAULT NULL,
     ThumbsUp          INTEGER NOT NULL DEFAULT 0,
@@ -77,6 +78,17 @@ CREATE TABLE IF NOT EXISTS learned_words (
 
 CREATE INDEX IF NOT EXISTS idx_word_freq
     ON learned_words(Frequency DESC);
+
+-- ── 사용자 메모장 테이블 ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_memos (
+    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    Content     TEXT    NOT NULL,
+    Description TEXT    NOT NULL DEFAULT '',s
+    MemoDate    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now','localtime'))s
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_memos_date
+    ON user_memos(MemoDate DESC);
 ";
         await cmd.ExecuteNonQueryAsync();
 
@@ -88,6 +100,21 @@ CREATE INDEX IF NOT EXISTS idx_word_freq
     {
         // translations.IsAnalyzed
         await TryAddColumnAsync(conn, "translations", "IsAnalyzed", "INTEGER NOT NULL DEFAULT 0");
+
+        // learned_words.CreatedAt
+        await TryAddColumnAsync(conn, "learned_words", "CreatedAt", "TEXT");
+
+        // 기존 단어들 중 CreatedAt이 비어있는 데이터에 현재 시간 넣기
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"
+            UPDATE learned_words
+            SET CreatedAt = strftime('%Y-%m-%dT%H:%M:%f','now','localtime')
+            WHERE CreatedAt IS NULL OR CreatedAt = '';
+        ";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
         // learned_words.ThumbsUp / ThumbsDown
         await TryAddColumnAsync(conn, "learned_words", "ThumbsUp", "INTEGER NOT NULL DEFAULT 0");
         await TryAddColumnAsync(conn, "learned_words", "ThumbsDown", "INTEGER NOT NULL DEFAULT 0");
@@ -209,8 +236,8 @@ CREATE INDEX IF NOT EXISTS idx_word_freq
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO learned_words
-                (Lemma, Pos, Frequency, GdexScore, ExampleId, ExampleTranslated, ThumbsUp, ThumbsDown)
-            VALUES (@lemma, @pos, 1, @gdex, @eid, @et, 0, 0)
+                (Lemma, Pos, Frequency, GdexScore, CreatedAt, ExampleId, ExampleTranslated, ThumbsUp, ThumbsDown)
+            VALUES (@lemma, @pos, 1, @gdex, strftime('%Y-%m-%dT%H:%M:%f','now','localtime'), @eid, @et, 0, 0)
             ON CONFLICT(Lemma) DO UPDATE SET
                 Frequency  = Frequency + 1,
                 GdexScore  = CASE WHEN excluded.GdexScore > GdexScore
@@ -240,28 +267,91 @@ CREATE INDEX IF NOT EXISTS idx_word_freq
         await cmd.ExecuteNonQueryAsync();
     }
 
-    /// <summary>단어 목록 — 학습 우선순위순 (UserScore 낮은 단어 먼저)</summary>
-    public async Task<List<WordEntry>> GetWordEntriesAsync(int limit = 200)
+    public async Task<List<WordEntry>> GetWordEntriesAsync(int limit = 200, string? appName = null)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+
+        var useAppFilter =
+            !string.IsNullOrWhiteSpace(appName) &&
+            appName != "전체";
+
+        cmd.CommandText = @"
+        SELECT lw.Id, lw.Lemma, lw.Pos, lw.Frequency, lw.GdexScore,
+               lw.CreatedAt,
+               t.OriginalText, lw.ExampleTranslated,
+               lw.ThumbsUp, lw.ThumbsDown
+        FROM learned_words lw
+        LEFT JOIN translations t ON t.Id = lw.ExampleId
+        WHERE (@app IS NULL OR t.AppName = @app)
+        ORDER BY lw.CreatedAt DESC
+        LIMIT @lim;";
+
+        cmd.Parameters.AddWithValue("@app", useAppFilter ? appName! : DBNull.Value);
+        cmd.Parameters.AddWithValue("@lim", limit);
+
+        var list = new List<WordEntry>();
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(ReadWordEntry(reader));
+        }
+
+        return list;
+    }
+
+    public async Task<List<string>> GetWordSourceAppsAsync()
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = @"
+        SELECT DISTINCT AppName
+        FROM translations
+        WHERE AppName IS NOT NULL
+          AND TRIM(AppName) <> ''
+        ORDER BY AppName ASC;";
+
+        var list = new List<string>();
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(reader.GetString(0));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// 번역 기록에 저장된 대상 앱 목록을 가져온다.
+    /// </summary>
+    public async Task<List<string>> GetTranslationSourceAppsAsync()
     {
         await using var conn = new SqliteConnection(_connStr);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            SELECT lw.Id, lw.Lemma, lw.Pos, lw.Frequency, lw.GdexScore,
-                   t.OriginalText, lw.ExampleTranslated,
-                   lw.ThumbsUp, lw.ThumbsDown
-            FROM learned_words lw
-            LEFT JOIN translations t ON t.Id = lw.ExampleId
-            ORDER BY (lw.ThumbsUp - lw.ThumbsDown) ASC,
-                     lw.Frequency DESC,
-                     lw.GdexScore  DESC
-            LIMIT @lim;";
-        cmd.Parameters.AddWithValue("@lim", limit);
 
-        var list = new List<WordEntry>();
+        cmd.CommandText = @"
+        SELECT DISTINCT AppName
+        FROM translations
+        WHERE AppName IS NOT NULL
+          AND AppName <> ''
+        ORDER BY AppName ASC;";
+
+        var list = new List<string>();
+
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            list.Add(ReadWordEntry(reader));
+        {
+            list.Add(reader.GetString(0));
+        }
+
         return list;
     }
 
@@ -272,10 +362,13 @@ CREATE INDEX IF NOT EXISTS idx_word_freq
         Pos = r.GetString(2),
         Frequency = r.GetInt32(3),
         GdexScore = r.GetDouble(4),
-        ExampleSentence = r.IsDBNull(5) ? "" : r.GetString(5),
-        ExampleTranslated = r.IsDBNull(6) ? null : r.GetString(6),
-        ThumbsUp = r.IsDBNull(7) ? 0 : r.GetInt32(7),
-        ThumbsDown = r.IsDBNull(8) ? 0 : r.GetInt32(8),
+        CreatedAt = DateTime.TryParse(r.IsDBNull(5) ? null : r.GetString(5), out var createdAt)
+            ? createdAt
+            : DateTime.Now,
+        ExampleSentence = r.IsDBNull(6) ? "" : r.GetString(6),
+        ExampleTranslated = r.IsDBNull(7) ? null : r.GetString(7),
+        ThumbsUp = r.IsDBNull(8) ? 0 : r.GetInt32(8),
+        ThumbsDown = r.IsDBNull(9) ? 0 : r.GetInt32(9),
     };
 
     // ── 삭제 / 유지보수 ──────────────────────────────────────────────────
@@ -309,6 +402,103 @@ CREATE INDEX IF NOT EXISTS idx_word_freq
         cmd.Parameters.AddWithValue("@id", id);
         await cmd.ExecuteNonQueryAsync();
     }
+
+    // ── 사용자 메모장 ────────────────────────────────────────────────────
+    public async Task<long> InsertMemoAsync(string content, string description)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+        INSERT INTO user_memos (Content, Description, MemoDate)
+        VALUES (@content, @description, strftime('%Y-%m-%dT%H:%M:%f','now','localtime'))
+        RETURNING Id;";
+
+        cmd.Parameters.AddWithValue("@content", content);
+        cmd.Parameters.AddWithValue("@description", description ?? "");
+
+        return (long)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    public async Task UpdateMemoAsync(long id, string content, string description)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+        UPDATE user_memos
+        SET Content = @content,
+            Description = @description,
+            MemoDate = strftime('%Y-%m-%dT%H:%M:%f','now','localtime')
+        WHERE Id = @id;";
+
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@content", content);
+        cmd.Parameters.AddWithValue("@description", description ?? "");
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<MemoItem>> GetMemosAsync(
+        string? searchText = null,
+        bool sortAscending = false)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+
+        var sql = @"
+        SELECT Id, Content, Description, MemoDate
+        FROM user_memos
+        WHERE (@search IS NULL
+               OR Content LIKE '%' || @search || '%'
+               OR Description LIKE '%' || @search || '%')
+    ";
+
+        sql += sortAscending
+            ? " ORDER BY MemoDate ASC;"
+            : " ORDER BY MemoDate DESC;";
+
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue(
+            "@search",
+            string.IsNullOrWhiteSpace(searchText) ? DBNull.Value : searchText.Trim());
+
+        var list = new List<MemoItem>();
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(ReadMemoItem(reader));
+        }
+
+        return list;
+    }
+
+    public async Task DeleteMemoAsync(long id)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM user_memos WHERE Id = @id;";
+        cmd.Parameters.AddWithValue("@id", id);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static MemoItem ReadMemoItem(SqliteDataReader r) => new()
+    {
+        Id = r.GetInt64(0),
+        Content = r.GetString(1),
+        Description = r.IsDBNull(2) ? "" : r.GetString(2),
+        MemoDate = DateTime.TryParse(r.IsDBNull(3) ? null : r.GetString(3), out var memoDate)
+            ? memoDate
+            : DateTime.Now
+    };
     /// <summary>
     /// 번역 기록 + 단어장 전체를 삭제하고 AUTOINCREMENT 시퀀스를 초기화한다.
     /// 이 작업은 되돌릴 수 없다.

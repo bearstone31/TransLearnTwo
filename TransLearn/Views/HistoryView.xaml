@@ -54,7 +54,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="230"/>
                 </Grid.ColumnDefinitions>
                 <TextBox Grid.Column="0"
                          Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
