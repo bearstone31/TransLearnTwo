@@ -41,6 +41,7 @@ public partial class LearningViewModel : ObservableObject
     [ObservableProperty] private int _currentQuizIndex;
     [ObservableProperty] private QuizItem? _currentQuiz;
     [ObservableProperty] private string _selectedSourceApp = "전체";
+    [ObservableProperty] private string _shortAnswerInput = "";
 
     [ObservableProperty] private string _sortColumn = "Date";
     [ObservableProperty] private bool _sortAscending = false;
@@ -292,6 +293,28 @@ public partial class LearningViewModel : ObservableObject
     // 4. 퀴즈 생성
     // ────────────────────────────────────────────────────────────────────
     [RelayCommand]
+    private static void ApplyQuizTypes(List<QuizItem> items)
+    {
+        if (items.Count == 0) return;
+
+        var rng = new Random();
+
+        // 전체 문제의 30%를 서술형으로 설정
+        // 10문제면 3문제
+        int shortAnswerCount = (int)Math.Round(items.Count * 0.3);
+
+        foreach (var item in items)
+            item.Type = QuizType.MultipleChoice;
+
+        var shortAnswerItems = items
+            .OrderBy(_ => rng.Next())
+            .Take(shortAnswerCount)
+            .ToList();
+
+        foreach (var item in shortAnswerItems)
+            item.Type = QuizType.ShortAnswer;
+    }
+    [RelayCommand]
     private async Task GenerateQuizAsync()
     {
         if (Words.Count < 4)
@@ -311,6 +334,7 @@ public partial class LearningViewModel : ObservableObject
             else
                 items = GenerateFallbackQuiz(pool, Words.ToList(), 10);
 
+            ApplyQuizTypes(items);
             Quiz.Clear();
             foreach (var q in items) Quiz.Add(q);
 
@@ -319,6 +343,7 @@ public partial class LearningViewModel : ObservableObject
             QuizFinished = false;
             CurrentQuizIndex = 0;
             CurrentQuiz = Quiz.FirstOrDefault();
+            ShortAnswerInput = "";
             ActiveTab = 1;
 
             var diffLabel = SelectedDifficulty switch
@@ -341,16 +366,52 @@ public partial class LearningViewModel : ObservableObject
     private async Task AnswerQuizAsync(string answer)
     {
         if (CurrentQuiz == null) return;
-        bool correct = answer == CurrentQuiz.Correct;
+
+        bool correct = IsCorrectAnswer(answer, CurrentQuiz.Correct);
+
+        await ProcessQuizAnswerAsync(correct);
+    }
+
+    [RelayCommand]
+    private async Task SubmitShortAnswerAsync()
+    {
+        if (CurrentQuiz == null) return;
+
+        bool correct = IsCorrectAnswer(ShortAnswerInput, CurrentQuiz.Correct);
+
+        await ProcessQuizAnswerAsync(correct);
+    }
+
+    private static bool IsCorrectAnswer(string? userAnswer, string correctAnswer)
+    {
+        return string.Equals(
+            userAnswer?.Trim(),
+            correctAnswer.Trim(),
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
+    private async Task ProcessQuizAnswerAsync(bool correct)
+    {
+        if (CurrentQuiz == null) return;
+
         CurrentQuiz.UserAnswer = correct;
 
         var word = Words.FirstOrDefault(w => w.Id == CurrentQuiz.WordId);
-        if (word != null) await RateWord(word, thumbsUp: correct);
-        if (correct) QuizScore++;
+        if (word != null)
+            await RateWord(word, thumbsUp: correct);
+
+        if (correct)
+            QuizScore++;
+
+        ShortAnswerInput = "";
 
         CurrentQuizIndex++;
+
         if (CurrentQuizIndex < Quiz.Count)
+        {
             CurrentQuiz = Quiz[CurrentQuizIndex];
+        }
         else
         {
             QuizFinished = true;

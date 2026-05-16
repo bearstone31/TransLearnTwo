@@ -81,16 +81,31 @@ public class WordEntry
                          "±0";
 }
 
+public enum QuizType
+{
+    MultipleChoice,
+    ShortAnswer
+}
 public class QuizItem
 {
     public long WordId { get; set; }   // 평가 반영용
     public string Question { get; set; } = "";
     public string Sentence { get; set; } = "";
-    public string Translation { get; set; } = "";  // ← 이게 추가됨
+    public string Translation { get; set; } = "";
     public string Correct { get; set; } = "";
     public List<string> Choices { get; set; } = new();
     public string Pos { get; set; } = "";
     public bool? UserAnswer { get; set; }
+
+    // 추가
+    public QuizType Type { get; set; } = QuizType.MultipleChoice;
+
+    public bool IsMultipleChoice => Type == QuizType.MultipleChoice;
+    public bool IsShortAnswer => Type == QuizType.ShortAnswer;
+
+    public string TypeLabel => Type == QuizType.MultipleChoice
+        ? "객관식"
+        : "서술형";
 }
 
 public class MemoItem

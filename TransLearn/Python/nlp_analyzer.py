@@ -103,8 +103,7 @@ def get_nltk_pos(word: str, sentence: str) -> str:
     """문장 내에서 단어의 NLTK POS 태그 반환"""
     if not NLTK_AVAILABLE:
         return "UNKNOWN"
-    dkshk\
-        \
+
 
     try:
         tokens = word_tokenize(sentence)

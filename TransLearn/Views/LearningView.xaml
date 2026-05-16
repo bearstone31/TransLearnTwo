@@ -133,35 +133,35 @@
           MaxDropDownHeight="260"
           ItemsSource="{Binding SourceApps}"
           SelectedItem="{Binding SelectedSourceApp, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-          Foreground="{StaticResource TextPrimary}"
-          Background="{StaticResource BgInput}"
+          Foreground="Black"
+          Background="White"
           BorderBrush="#555"
           Padding="8,4">
 
                         <ComboBox.Resources>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#202020"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#1E88E5"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#F2F2F2"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="White"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#D8EEFF"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="Black"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="Black"/>
                         </ComboBox.Resources>
 
                         <ComboBox.ItemContainerStyle>
                             <Style TargetType="ComboBoxItem">
-                                <Setter Property="Foreground" Value="#F2F2F2"/>
-                                <Setter Property="Background" Value="#202020"/>
+                                <Setter Property="Foreground" Value="Black"/>
+                                <Setter Property="Background" Value="White"/>
                                 <Setter Property="Padding" Value="10,7"/>
                                 <Setter Property="FontSize" Value="13"/>
                                 <Setter Property="MinHeight" Value="32"/>
 
                                 <Style.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#263B4A"/>
-                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="Background" Value="#EAF4FF"/>
+                                        <Setter Property="Foreground" Value="Black"/>
                                     </Trigger>
 
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#1E88E5"/>
-                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="Background" Value="#D8EEFF"/>
+                                        <Setter Property="Foreground" Value="Black"/>
                                         <Setter Property="FontWeight" Value="SemiBold"/>
                                     </Trigger>
                                 </Style.Triggers>
@@ -171,7 +171,7 @@
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding}"
-                       Foreground="#F2F2F2"
+                       Foreground="Black"
                        TextTrimming="CharacterEllipsis"
                        FontSize="13"/>
                             </DataTemplate>
@@ -468,9 +468,22 @@
                                 </TextBlock>
                             </Grid>
 
-                            <TextBlock Text="{Binding CurrentQuiz.Question}"
-                                       Foreground="{StaticResource TextPrimary}"
-                                       FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Border Background="{StaticResource BgInput}"
+            CornerRadius="6"
+            Padding="8,3"
+            Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding CurrentQuiz.TypeLabel}"
+                   Foreground="{StaticResource AccentGreen}"
+                   FontSize="11"
+                   FontWeight="Bold"/>
+                                </Border>
+
+                                <TextBlock Text="{Binding CurrentQuiz.Question}"
+               Foreground="{StaticResource TextPrimary}"
+               FontSize="15"
+               FontWeight="SemiBold"/>
+                            </StackPanel>
 
                             <!-- [수정] 예문 + 번역문 함께 표시 -->
                             <Border Background="{StaticResource BgInput}" CornerRadius="8"
@@ -488,18 +501,44 @@
                                 </StackPanel>
                             </Border>
 
-                            <ItemsControl ItemsSource="{Binding CurrentQuiz.Choices}">
+                            <!-- 객관식 선지 -->
+                            <ItemsControl ItemsSource="{Binding CurrentQuiz.Choices}"
+              Visibility="{Binding CurrentQuiz.IsMultipleChoice, Converter={StaticResource BoolVis}}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Button Content="{Binding}"
-                                                Style="{StaticResource PrimaryButton}"
-                                                HorizontalAlignment="Stretch" Margin="0,4"
-                                                Command="{Binding DataContext.AnswerQuizCommand,
-                                                          RelativeSource={RelativeSource AncestorType=Page}}"
-                                                CommandParameter="{Binding}"/>
+                    Style="{StaticResource PrimaryButton}"
+                    HorizontalAlignment="Stretch" Margin="0,4"
+                    Command="{Binding DataContext.AnswerQuizCommand,
+                              RelativeSource={RelativeSource AncestorType=Page}}"
+                    CommandParameter="{Binding}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <!-- 서술형 입력 -->
+                            <StackPanel Visibility="{Binding CurrentQuiz.IsShortAnswer, Converter={StaticResource BoolVis}}">
+                                <TextBlock Text="빈칸에 들어갈 단어를 직접 입력하세요."
+               Foreground="{StaticResource TextSecond}"
+               FontSize="12"
+               Margin="0,0,0,8"/>
+
+                                <TextBox Text="{Binding ShortAnswerInput, UpdateSourceTrigger=PropertyChanged}"
+         MinHeight="44"
+         FontSize="15"
+         Padding="10,0"
+         VerticalContentAlignment="Center"
+         Background="{StaticResource BgInput}"
+         Foreground="{StaticResource TextPrimary}"
+         BorderBrush="#555"
+         BorderThickness="1"
+         Margin="0,0,0,10"/>
+
+                                <Button Content="제출"
+            Style="{StaticResource PrimaryButton}"
+            HorizontalAlignment="Stretch"
+            Command="{Binding SubmitShortAnswerCommand}"/>
+                            </StackPanel>
 
                             <Border Margin="0,16,0,0" Padding="12,8"
                                     Background="{StaticResource BgInput}" CornerRadius="8">
