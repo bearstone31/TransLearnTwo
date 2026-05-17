@@ -39,6 +39,10 @@ public class WordEntry
     public string Pos { get; set; } = "";
     public int Frequency { get; set; }
     public double GdexScore { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string DateLabel => CreatedAt.ToString("yyyy-MM-dd HH:mm");
+
     public string ExampleSentence { get; set; } = "";
     public string? ExampleTranslated { get; set; }
 
@@ -77,14 +81,45 @@ public class WordEntry
                          "±0";
 }
 
+public enum QuizType
+{
+    MultipleChoice,
+    ShortAnswer
+}
 public class QuizItem
 {
     public long WordId { get; set; }   // 평가 반영용
     public string Question { get; set; } = "";
     public string Sentence { get; set; } = "";
-    public string Translation { get; set; } = "";  // ← 이게 추가됨
+    public string Translation { get; set; } = "";
     public string Correct { get; set; } = "";
     public List<string> Choices { get; set; } = new();
     public string Pos { get; set; } = "";
     public bool? UserAnswer { get; set; }
+
+    // 추가
+    public QuizType Type { get; set; } = QuizType.MultipleChoice;
+
+    public bool IsMultipleChoice => Type == QuizType.MultipleChoice;
+    public bool IsShortAnswer => Type == QuizType.ShortAnswer;
+
+    public string TypeLabel => Type == QuizType.MultipleChoice
+        ? "객관식"
+        : "서술형";
+}
+
+public class MemoItem
+{
+    public long Id { get; set; }
+
+    // 사용자가 메모한 영어 단어 또는 문장
+    public string Content { get; set; } = "";
+
+    // 사용자가 자유롭게 적는 설명
+    public string Description { get; set; } = "";
+
+    // 작성/수정 날짜를 하나로 관리
+    public DateTime MemoDate { get; set; } = DateTime.Now;
+
+    public string DateLabel => MemoDate.ToString("yyyy-MM-dd HH:mm");
 }

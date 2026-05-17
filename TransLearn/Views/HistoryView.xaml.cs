@@ -14,4 +14,9 @@ public partial class HistoryView : Page
                 await vm.LoadCommand.ExecuteAsync(null);
         };
     }
+
+    private void ComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+
+    }
 }

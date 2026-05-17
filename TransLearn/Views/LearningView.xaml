@@ -99,12 +99,87 @@
         </Grid>
 
         <!-- ── 탭 버튼 ── -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-            <Button Content="📚 단어장" Style="{StaticResource PrimaryButton}"
-                    Click="Tab_WordList" Margin="0,0,6,0"/>
-            <Button Content="📝 퀴즈" Style="{StaticResource PrimaryButton}"
-                    Click="Tab_Quiz"/>
-        </StackPanel>
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 탭 버튼 -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="📚 단어장" Style="{StaticResource PrimaryButton}"
+                Click="Tab_WordList" Margin="0,0,6,0"/>
+                <Button Content="📝 퀴즈" Style="{StaticResource PrimaryButton}"
+                Click="Tab_Quiz"/>
+            </StackPanel>
+
+            <!-- 앱 선택 필터 -->
+            <Border Grid.Column="2"
+            BorderBrush="#444"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="8,5"
+            VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="가져온 앱"
+                       FontSize="11"
+                       Foreground="{StaticResource TextSecond}"
+                       VerticalAlignment="Center"
+                       Margin="0,0,8,0"/>
+
+                    <ComboBox Width="360"
+          Height="34"
+          MaxDropDownHeight="260"
+          ItemsSource="{Binding SourceApps}"
+          SelectedItem="{Binding SelectedSourceApp, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+          Foreground="Black"
+          Background="White"
+          BorderBrush="#555"
+          Padding="8,4">
+
+                        <ComboBox.Resources>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="White"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#D8EEFF"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="Black"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="Black"/>
+                        </ComboBox.Resources>
+
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="Foreground" Value="Black"/>
+                                <Setter Property="Background" Value="White"/>
+                                <Setter Property="Padding" Value="10,7"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="MinHeight" Value="32"/>
+
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#EAF4FF"/>
+                                        <Setter Property="Foreground" Value="Black"/>
+                                    </Trigger>
+
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#D8EEFF"/>
+                                        <Setter Property="Foreground" Value="Black"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}"
+                       Foreground="Black"
+                       TextTrimming="CharacterEllipsis"
+                       FontSize="13"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <!-- 로딩 -->
         <Border Grid.Row="2"
@@ -128,6 +203,7 @@
                             <ColumnDefinition Width="140"/>
                             <ColumnDefinition Width="50"/>
                             <ColumnDefinition Width="45"/>
+                            <ColumnDefinition Width="125"/>
                             <ColumnDefinition Width="70"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
@@ -135,23 +211,59 @@
                             <ColumnDefinition Width="36"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="단어" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="14,8"/>
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="14,8"/>
+
                         <TextBlock Grid.Column="1" Text="품사" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
+
                         <TextBlock Grid.Column="2" Text="빈도" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
-                        <TextBlock Grid.Column="3" Text="평가" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
-                        <TextBlock Grid.Column="4" Text="예문 (영문)" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
-                        <TextBlock Grid.Column="5" Text="예문 (한국어)" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
-                        <TextBlock Grid.Column="6" Text="👍 / 👎" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"
-                                   HorizontalAlignment="Center"/>
-                        <TextBlock Grid.Column="7" Text="삭제" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"
-                                   HorizontalAlignment="Center"/>
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
+
+                        <Button Grid.Column="3"
+        Background="Transparent"
+        BorderThickness="0"
+        Padding="4,8"
+        Cursor="Hand"
+        Command="{Binding SortWordsCommand}"
+        CommandParameter="Date">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="날짜" FontWeight="Bold"
+                   Foreground="{StaticResource TextSecond}" FontSize="11"/>
+                                <TextBlock Text="{Binding DateSortArrow}"
+                   Foreground="{StaticResource TextSecond}" FontSize="10"
+                   Margin="4,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="4"
+        Background="Transparent"
+        BorderThickness="0"
+        Padding="4,8"
+        Cursor="Hand"
+        Command="{Binding SortWordsCommand}"
+        CommandParameter="Rating">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="평가" FontWeight="Bold"
+                   Foreground="{StaticResource TextSecond}" FontSize="11"/>
+                                <TextBlock Text="{Binding RatingSortArrow}"
+                   Foreground="{StaticResource TextSecond}" FontSize="10"
+                   Margin="4,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+
+                        <TextBlock Grid.Column="5" Text="예문 (영문)" FontWeight="Bold"
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
+
+                        <TextBlock Grid.Column="6" Text="예문 (한국어)" FontWeight="Bold"
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"/>
+
+                        <TextBlock Grid.Column="7" Text="👍 / 👎" FontWeight="Bold"
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"
+           HorizontalAlignment="Center"/>
+
+                        <TextBlock Grid.Column="8" Text="삭제" FontWeight="Bold"
+           Foreground="{StaticResource TextSecond}" FontSize="11" Padding="4,8"
+           HorizontalAlignment="Center"/>
                     </Grid>
 
                     <ListView Grid.Row="1"
@@ -176,6 +288,7 @@
                                         <ColumnDefinition Width="140"/>
                                         <ColumnDefinition Width="50"/>
                                         <ColumnDefinition Width="45"/>
+                                        <ColumnDefinition Width="125"/>
                                         <ColumnDefinition Width="70"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
@@ -200,8 +313,14 @@
                                                FontWeight="Bold" FontSize="13"
                                                Padding="4,8" VerticalAlignment="Center"
                                                HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding DateLabel}"
+           Foreground="{StaticResource TextSecond}"
+           FontSize="11"
+           Padding="4,8"
+           VerticalAlignment="Center"
+           HorizontalAlignment="Center"/>
 
-                                    <Border Grid.Column="3" Margin="4,6" Padding="6,2"
+                                    <Border Grid.Column="4" Margin="4,6" Padding="6,2"
                                             CornerRadius="4" VerticalAlignment="Center"
                                             HorizontalAlignment="Left">
                                         <Border.Style>
@@ -238,17 +357,17 @@
                                         </TextBlock>
                                     </Border>
 
-                                    <TextBlock Grid.Column="4" Text="{Binding ExampleSentence}"
+                                    <TextBlock Grid.Column="5" Text="{Binding ExampleSentence}"
                                                Foreground="{StaticResource TextPrimary}"
                                                FontSize="11" Padding="4,8"
                                                TextWrapping="Wrap" VerticalAlignment="Center"/>
 
-                                    <TextBlock Grid.Column="5" Text="{Binding ExampleTranslated}"
+                                    <TextBlock Grid.Column="6" Text="{Binding ExampleTranslated}"
                                                Foreground="{StaticResource TextGreen}"
                                                FontSize="11" Padding="4,8"
                                                TextWrapping="Wrap" VerticalAlignment="Center"/>
 
-                                    <StackPanel Grid.Column="6" Orientation="Horizontal"
+                                    <StackPanel Grid.Column="7" Orientation="Horizontal"
                                                 VerticalAlignment="Center" HorizontalAlignment="Center">
                                         <Button Content="👍" FontSize="16"
                                                 Background="Transparent" BorderThickness="0"
@@ -266,7 +385,7 @@
                                                 CommandParameter="{Binding}"/>
                                     </StackPanel>
 
-                                    <Button Grid.Column="7" Content="🗑"
+                                    <Button Grid.Column="8" Content="🗑"
                                             Background="Transparent" BorderThickness="0"
                                             Foreground="#EF5350" FontSize="14" Cursor="Hand"
                                             VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -349,9 +468,22 @@
                                 </TextBlock>
                             </Grid>
 
-                            <TextBlock Text="{Binding CurrentQuiz.Question}"
-                                       Foreground="{StaticResource TextPrimary}"
-                                       FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Border Background="{StaticResource BgInput}"
+            CornerRadius="6"
+            Padding="8,3"
+            Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding CurrentQuiz.TypeLabel}"
+                   Foreground="{StaticResource AccentGreen}"
+                   FontSize="11"
+                   FontWeight="Bold"/>
+                                </Border>
+
+                                <TextBlock Text="{Binding CurrentQuiz.Question}"
+               Foreground="{StaticResource TextPrimary}"
+               FontSize="15"
+               FontWeight="SemiBold"/>
+                            </StackPanel>
 
                             <!-- [수정] 예문 + 번역문 함께 표시 -->
                             <Border Background="{StaticResource BgInput}" CornerRadius="8"
@@ -369,18 +501,44 @@
                                 </StackPanel>
                             </Border>
 
-                            <ItemsControl ItemsSource="{Binding CurrentQuiz.Choices}">
+                            <!-- 객관식 선지 -->
+                            <ItemsControl ItemsSource="{Binding CurrentQuiz.Choices}"
+              Visibility="{Binding CurrentQuiz.IsMultipleChoice, Converter={StaticResource BoolVis}}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Button Content="{Binding}"
-                                                Style="{StaticResource PrimaryButton}"
-                                                HorizontalAlignment="Stretch" Margin="0,4"
-                                                Command="{Binding DataContext.AnswerQuizCommand,
-                                                          RelativeSource={RelativeSource AncestorType=Page}}"
-                                                CommandParameter="{Binding}"/>
+                    Style="{StaticResource PrimaryButton}"
+                    HorizontalAlignment="Stretch" Margin="0,4"
+                    Command="{Binding DataContext.AnswerQuizCommand,
+                              RelativeSource={RelativeSource AncestorType=Page}}"
+                    CommandParameter="{Binding}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <!-- 서술형 입력 -->
+                            <StackPanel Visibility="{Binding CurrentQuiz.IsShortAnswer, Converter={StaticResource BoolVis}}">
+                                <TextBlock Text="빈칸에 들어갈 단어를 직접 입력하세요."
+               Foreground="{StaticResource TextSecond}"
+               FontSize="12"
+               Margin="0,0,0,8"/>
+
+                                <TextBox Text="{Binding ShortAnswerInput, UpdateSourceTrigger=PropertyChanged}"
+         MinHeight="44"
+         FontSize="15"
+         Padding="10,0"
+         VerticalContentAlignment="Center"
+         Background="{StaticResource BgInput}"
+         Foreground="{StaticResource TextPrimary}"
+         BorderBrush="#555"
+         BorderThickness="1"
+         Margin="0,0,0,10"/>
+
+                                <Button Content="제출"
+            Style="{StaticResource PrimaryButton}"
+            HorizontalAlignment="Stretch"
+            Command="{Binding SubmitShortAnswerCommand}"/>
+                            </StackPanel>
 
                             <Border Margin="0,16,0,0" Padding="12,8"
                                     Background="{StaticResource BgInput}" CornerRadius="8">
