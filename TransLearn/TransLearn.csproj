@@ -38,10 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Python\models\my_distilbert.onnx">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Python\nlp_analyzer.exe">
+    <None Update="Python\nlp_analyz.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="Python\nlp_analyzer.py">

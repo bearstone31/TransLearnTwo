@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS learned_words (
 
 CREATE INDEX IF NOT EXISTS idx_word_freq
     ON learned_words(Frequency DESC);
+
+-- ── 사용자 메모장 테이블 ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_memos (
+    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    Content     TEXT    NOT NULL,
+    Description TEXT    NOT NULL DEFAULT '',
+    MemoDate    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_memos_date
+    ON user_memos(MemoDate DESC);
 ";
         await cmd.ExecuteNonQueryAsync();
 

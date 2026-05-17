@@ -53,8 +53,11 @@ public sealed class TextQualityFilter
     private static readonly Regex _repeatBlock  = new(@"(.)\1{4,}",       RegexOptions.Compiled);  // aaaaa
     private static readonly Regex _onlySymbols  = new(@"^[\W\d_]+$",      RegexOptions.Compiled);
     private static readonly Regex _urlOrPath    = new(@"(https?://|\\\\|[A-Z]:\\)", RegexOptions.Compiled);
-    private static readonly Regex _hexDump      = new(@"\b[0-9a-fA-F]{6,}\b", RegexOptions.Compiled);
-
+    // 수정: 실제 16진수 덤프만 감지
+    // 0x 접두사가 있거나, 숫자로 시작하거나, 공백으로 구분된 짧은 hex 토큰 여러 개
+    private static readonly Regex _hexDump = new(
+        @"(0x[0-9a-fA-F]{4,}|\b[0-9][0-9a-fA-F]{5,}\b|(\b[0-9a-fA-F]{2}\b\s+){4,})",
+        RegexOptions.Compiled);
     // ── 기본 영단어 집합 (매우 흔한 500단어 중 핵심만 포함, 빌드 크기 최소화) ──
     private static readonly HashSet<string> _commonWords = BuildCommonWordSet();
 

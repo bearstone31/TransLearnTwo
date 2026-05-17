@@ -25,7 +25,7 @@ public partial class MainWindow : Window
         // Update sidebar active state
         foreach (var child in FindVisualChildren<Button>(this))
         {
-            if (child.Tag is string t && new[] {"OCR","Sound","Learn","History","Settings"}.Contains(t))
+            if (child.Tag is string t && new[] { "OCR", "Sound", "Learn", "History", "Memo", "Settings" }.Contains(t))
             {
                 child.Style = (t == tag)
                     ? (Style)FindResource("SidebarButtonActiveStyle")
@@ -38,12 +38,13 @@ public partial class MainWindow : Window
         {
             page = tag switch
             {
-                "OCR"      => new OcrView(),
-                "Sound"    => new SoundView(),
-                "Learn"    => new LearningView(),
-                "History"  => new HistoryView(),
+                "OCR" => new OcrView(),
+                "Sound" => new SoundView(),
+                "Learn" => new LearningView(),
+                "History" => new HistoryView(),
+                "Memo" => new MemoView(),
                 "Settings" => new SettingsView(),
-                _          => new OcrView()
+                _ => new OcrView()
             };
             _pageCache[tag] = page;
         }

@@ -238,9 +238,12 @@ internal sealed class AzureSttEngine : ISttEngine, IDisposable
 
         var cfg = AzureSpeech.SpeechConfig.FromSubscription(key, region);
         cfg.SpeechRecognitionLanguage = "en-US";
-        cfg.SetProperty(AzureSpeech.PropertyId.Speech_SegmentationSilenceTimeoutMs, "1500");
-        cfg.SetProperty(AzureSpeech.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
 
+        // 500ms 침묵이면 바로 문장 확정 (기존 1500ms)
+        cfg.SetProperty(AzureSpeech.PropertyId.Speech_SegmentationSilenceTimeoutMs, "500");
+
+        cfg.SetProperty(AzureSpeech.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
+        
         _recognizer = new AzureSpeech.SpeechRecognizer(
                           cfg, AzureSpeechAudio.AudioConfig.FromStreamInput(_pushStream));
         _recognizer.Recognizing += (_, e) => Recognizing?.Invoke(e.Result.Text);

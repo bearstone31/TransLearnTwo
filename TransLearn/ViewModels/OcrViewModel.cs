@@ -2,14 +2,7 @@
 // OcrViewModel.cs
 // 역할 : OcrView의 MVVM ViewModel.
 //        화면 캡처 루프, Jaccard 유사도 중복 감지, 번역, DB 저장 담당.
-//
-// 동작 흐름
-//   StartCommand → 폴링 루프 시작 (1초 간격)
-//     → OcrCaptureService.CaptureAsync() → 텍스트 추출
-//     → Jaccard 유사도 체크 (SimilarityThreshold=0.70)
-//     → TextQualityFilter.Evaluate()
-//     → TranslationService.TranslateAsync()
-//     → DatabaseService.InsertTranslationAsync()
+//        [추가] 번역 자막 오버레이 창 토글
 // ============================================================
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -21,7 +14,6 @@ using TransLearn.Views;
 
 namespace TransLearn.ViewModels;
 
-/// <summary>XAML DisplayMemberPath 바인딩을 위해 튜플 대신 명시적 클래스 사용</summary>
 public class WindowInfo
 {
     public IntPtr Hwnd { get; set; }
@@ -40,6 +32,10 @@ public partial class OcrViewModel : ObservableObject
     [ObservableProperty] private string _captureRegionInfo = "캡처 영역 미설정";
     [ObservableProperty] private bool _hasRegion;
 
+    // ── [추가] 오버레이 상태 ──────────────────────────────────────────────
+    [ObservableProperty] private bool _isOverlayVisible;
+    private OverlayWindow? _overlayWindow;
+
     // ── 필터 통계 ─────────────────────────────────────────────────────────
     [ObservableProperty] private int _totalCaptures;
     [ObservableProperty] private int _discardedCount;
@@ -54,7 +50,6 @@ public partial class OcrViewModel : ObservableObject
     public ObservableCollection<WindowInfo> Windows { get; } = new();
 
     // ── 유사도 설정 ──────────────────────────────────────────────────────
-    /// <summary>Jaccard 유사도가 이 값 이상이면 중복으로 폐기 (0.0~1.0, 기본 0.70)</summary>
     [ObservableProperty] private double _similarityThreshold = 0.70;
 
     private readonly TextQualityFilter _filter = new();
@@ -62,7 +57,6 @@ public partial class OcrViewModel : ObservableObject
     private Rectangle? _captureRegion;
     private OcrRegionWindow? _regionWindow;
 
-    // 유사도 비교용: 마지막으로 통과한 문장의 토큰 집합 (슬라이딩 윈도우 3)
     private readonly Queue<HashSet<string>> _recentTokenSets = new();
     private const int SimilarityWindowSize = 3;
 
@@ -92,6 +86,44 @@ public partial class OcrViewModel : ObservableObject
         _regionWindow.Show();
     }
 
+    // ── [추가] 오버레이 토글 ─────────────────────────────────────────────
+    [RelayCommand]
+    private void ToggleOverlay()
+    {
+        if (_overlayWindow == null)
+        {
+            _overlayWindow = new OverlayWindow();
+            _overlayWindow.Closed += (_, _) =>
+            {
+                _overlayWindow = null;
+                IsOverlayVisible = false;
+            };
+        }
+
+        if (_overlayWindow.IsVisible)
+        {
+            _overlayWindow.Hide();
+            IsOverlayVisible = false;
+        }
+        else
+        {
+            _overlayWindow.Show();
+            IsOverlayVisible = true;
+
+            // 현재 번역문이 있으면 바로 표시
+            if (!string.IsNullOrWhiteSpace(TranslatedText))
+                _overlayWindow.UpdateTranslation(TranslatedText);
+        }
+    }
+
+    // ── TranslatedText 변경 시 오버레이 자동 업데이트 ────────────────────
+    partial void OnTranslatedTextChanged(string value)
+    {
+        if (_overlayWindow?.IsVisible == true)
+            _overlayWindow.UpdateTranslation(value);
+    }
+
+    // ── 시작 ──────────────────────────────────────────────────────────────
     [RelayCommand]
     private async Task StartAsync()
     {
@@ -116,7 +148,6 @@ public partial class OcrViewModel : ObservableObject
 
             try
             {
-                // ── 1. 화면 캡처 ─────────────────────────────────────────
                 var hwnd = SelectedWindow?.Hwnd ?? IntPtr.Zero;
                 bool useWin = hwnd != IntPtr.Zero;
 
@@ -134,7 +165,6 @@ public partial class OcrViewModel : ObservableObject
 
                 TotalCaptures++;
 
-                // ── 2. 기본 품질 필터 ─────────────────────────────────────
                 var result = _filter.Evaluate(raw, CaptureSource.OCR);
                 if (!result.Passed)
                 {
@@ -145,8 +175,6 @@ public partial class OcrViewModel : ObservableObject
                     continue;
                 }
 
-                // ── 3. 유사도 기반 중복 폐기 ─────────────────────────────
-                //    Jaccard 유사도로 최근 SimilarityWindowSize개 문장과 비교
                 var tokens = Tokenize(result.CleanedText);
                 var similarity = MaxJaccard(tokens);
                 if (similarity >= SimilarityThreshold)
@@ -160,19 +188,18 @@ public partial class OcrViewModel : ObservableObject
                     continue;
                 }
 
-                // 통과 → 슬라이딩 윈도우에 추가
                 _recentTokenSets.Enqueue(tokens);
                 if (_recentTokenSets.Count > SimilarityWindowSize)
                     _recentTokenSets.Dequeue();
 
-                // ── 4. 번역 → DB 저장 ─────────────────────────────────────
                 OriginalText = result.CleanedText;
                 LastRejectReason = "";
                 StatusText = "번역 중...";
                 OnPropertyChanged(nameof(DiscardRateText));
 
                 var translated = await App.Translation.TranslateAsync(result.CleanedText);
-                TranslatedText = translated;
+                TranslatedText = translated; // ← OnTranslatedTextChanged가 자동으로 오버레이 업데이트
+
                 StatusText = "캡처 중...";
 
                 _ = Task.Run(() => App.Database.InsertTranslationAsync(
@@ -189,8 +216,6 @@ public partial class OcrViewModel : ObservableObject
     }
 
     // ── 유사도 헬퍼 ──────────────────────────────────────────────────────
-
-    /// <summary>소문자 단어 토큰 집합으로 변환 (3자 이상 알파벳)</summary>
     private static HashSet<string> Tokenize(string text)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -203,7 +228,6 @@ public partial class OcrViewModel : ObservableObject
         return set;
     }
 
-    /// <summary>최근 통과 문장들과의 최대 Jaccard 유사도 반환</summary>
     private double MaxJaccard(HashSet<string> tokens)
     {
         if (tokens.Count == 0 || _recentTokenSets.Count == 0) return 0.0;

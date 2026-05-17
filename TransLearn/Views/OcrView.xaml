@@ -53,6 +53,13 @@
 
                 <!-- Control buttons -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
+
+                    <!-- [추가] 자막 레이어 토글 버튼 -->
+                    <Button Content="📺 자막 레이어"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding ToggleOverlayCommand}"
+                            Margin="0,0,6,0"/>
+
                     <Button Content="🖱 캡처 영역 설정"
                             Style="{StaticResource PrimaryButton}"
                             Command="{Binding SetCaptureRegionCommand}"
@@ -88,7 +95,6 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 필터 레이블 -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="🔍 품질 필터"
                                Foreground="{StaticResource TextSecond}"
@@ -97,7 +103,6 @@
                                Foreground="#FF9800" FontSize="11"/>
                 </StackPanel>
 
-                <!-- 마지막 폐기 이유 -->
                 <TextBlock Grid.Column="1"
                            Text="{Binding LastRejectReason}"
                            Foreground="#EF5350"
@@ -106,7 +111,6 @@
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis"/>
 
-                <!-- 통계 리셋 버튼 -->
                 <Button Grid.Column="2"
                         Content="초기화"
                         Background="Transparent"

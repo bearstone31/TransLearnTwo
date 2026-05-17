@@ -103,8 +103,6 @@ def get_nltk_pos(word: str, sentence: str) -> str:
     """문장 내에서 단어의 NLTK POS 태그 반환"""
     if not NLTK_AVAILABLE:
         return "UNKNOWN"
-    dkshk\
-        \
 
     try:
         tokens = word_tokenize(sentence)
@@ -181,20 +179,29 @@ try:
     import numpy as np
     from transformers import DistilBertTokenizer
 
-    onnx_path = os.path.join(BASE_PATH, "models", "my_distilbert.onnx")
-    if not os.path.exists(onnx_path):
-        onnx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "my_distilbert.onnx")
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    if os.path.exists(onnx_path):
-        ort_session  = ort.InferenceSession(onnx_path)
-        tokenizer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tokenizer")
+    # 여러 경로 순서대로 탐색
+    _candidates = [
+        os.path.join(BASE_PATH, "models", "my_distilbert.onnx"),
+        os.path.join(_script_dir, "models", "my_distilbert.onnx"),
+        os.path.join(_script_dir, "nlp_analyzer", "models", "my_distilbert.onnx"),
+        os.path.join(_script_dir, "..", "models", "my_distilbert.onnx"),
+        os.path.join(_script_dir, "..", "Python", "models", "my_distilbert.onnx"),
+    ]
+
+    onnx_path = next((p for p in _candidates if os.path.exists(p)), None)
+
+    if onnx_path:
+        ort_session = ort.InferenceSession(onnx_path)
+        tokenizer_path = os.path.join(_script_dir, "tokenizer")
         if not os.path.exists(tokenizer_path):
             tokenizer_path = "distilbert-base-uncased"
         hf_tokenizer = DistilBertTokenizer.from_pretrained(tokenizer_path)
         DISTILBERT_AVAILABLE = True
         sys.stderr.write(f"[NLP] myDistilBERT 로드 성공: {onnx_path}\n")
     else:
-        sys.stderr.write(f"[NLP] ONNX 파일 없음: {onnx_path}\n")
+        sys.stderr.write(f"[NLP] ONNX 파일 없음 (탐색 경로: {_candidates})\n")
 except Exception as e:
     sys.stderr.write(f"[NLP] myDistilBERT 로드 실패: {e}\n")
 
@@ -388,9 +395,13 @@ def generate_quiz(entries: list, count: int = 10, difficulty: float = 0.5) -> li
 
     sys.stderr.write(f"[NLP] 전체 단어: {len(entries)}개 → 유효 단어(동사/형용사/부사): {len(valid_entries)}개\n")
 
-    if len(valid_entries) < 4:
-        valid_entries = entries
-        sys.stderr.write("[NLP] 유효 단어 부족 → 전체 단어 사용\n")
+    # 유효 단어가 count보다 부족하면 나머지로 보충
+    if len(valid_entries) < count:
+        extras = [e for e in entries if e not in valid_entries]
+        random.shuffle(extras)
+        valid_entries = valid_entries + extras
+        valid_entries = valid_entries[:count]
+        sys.stderr.write(f"[NLP] 유효 단어 부족 → 보충 후 {len(valid_entries)}개\n")
 
     random.shuffle(valid_entries)
     sample  = valid_entries[:min(count, len(valid_entries))]

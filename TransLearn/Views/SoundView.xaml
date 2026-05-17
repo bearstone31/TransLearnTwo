@@ -1,15 +1,6 @@
 <!--
     SoundView.xaml
     역할 : 오디오 캡처 + STT + 번역 기능의 메인 UI.
-
-    화면 구성 (위→아래)
-      Row 0  경고 배너    — STT 미설정 또는 Windows STT 안내
-      Row 1  툴바         — 상태 표시등 · 제목 · 시작/중지 버튼
-      Row 2  VU 미터      — 실시간 오디오 레벨 그라디언트 바 + 피크 바늘 + dB 표시
-      Row 3  앱 선택기    — 대상 앱 ComboBox + 새로고침
-      Row 4  필터 통계    — 품질 필터 폐기율 · 마지막 폐기 이유
-      Row 5  중간 결과    — STT 실시간 인식 텍스트
-      Row 6  메인 콘텐츠  — 원문/번역문 패널 | 최근 번역 기록 사이드바
 -->
 <Page x:Class="TransLearn.Views.SoundView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -25,7 +16,6 @@
         <conv:BoolToVisibilityConverter x:Key="BoolVisInv" Invert="True"/>
         <conv:RunningBrushConverter     x:Key="RunBrush"/>
 
-        <!-- VU 미터 ProgressBar 스타일 (그라디언트 + 둥근 모서리) -->
         <Style x:Key="VuMeterStyle" TargetType="ProgressBar">
             <Setter Property="Height" Value="14"/>
             <Setter Property="Minimum" Value="0"/>
@@ -36,7 +26,6 @@
                         <Border CornerRadius="7" Background="#1E293B" ClipToBounds="True"
                                 BorderBrush="#334155" BorderThickness="1">
                             <Grid>
-                                <!-- 레벨 채움 바 (PART_Indicator 가 폭 자동 계산) -->
                                 <Border x:Name="PART_Indicator"
                                         HorizontalAlignment="Left" CornerRadius="7">
                                     <Border.Background>
@@ -52,7 +41,6 @@
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- WPF ProgressBar 필수 PART 정의 (빈 트랙 표시용) -->
                             <Trigger Property="IsIndeterminate" Value="False"/>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -67,24 +55,22 @@
 
     <Grid Margin="20">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>  <!-- Row 0: 배너 -->
-            <RowDefinition Height="Auto"/>  <!-- Row 1: 툴바 -->
-            <RowDefinition Height="Auto"/>  <!-- Row 2: VU 미터 -->
-            <RowDefinition Height="Auto"/>  <!-- Row 3: 앱 선택 -->
-            <RowDefinition Height="Auto"/>  <!-- Row 4: 필터 통계 -->
-            <RowDefinition Height="Auto"/>  <!-- Row 5: 중간 결과 -->
-            <RowDefinition Height="*"/>     <!-- Row 6: 메인 콘텐츠 -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ── Row 0: STT 상태 배너 ─────────────────────────────────────── -->
-        <!-- Windows STT: 파란색 정보 배너 / Azure 미설정: 주황색 경고 배너 -->
+        <!-- ── Row 0: STT 상태 배너 ── -->
         <Border Grid.Row="0" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Background" Value="#7B3A00"/>
                     <Setter Property="Visibility" Value="Collapsed"/>
                     <Style.Triggers>
-                        <!-- 설정 안 됐을 때만 표시 -->
                         <DataTrigger Binding="{Binding SttConfigured}" Value="False">
                             <Setter Property="Visibility" Value="Visible"/>
                         </DataTrigger>
@@ -95,7 +81,6 @@
                        Foreground="#FFD54F" TextWrapping="Wrap" FontSize="12"/>
         </Border>
 
-        <!-- Windows STT 선택 안내 배너 (항상 약하게 표시) -->
         <Border Grid.Row="0" Background="#0D1F3C" CornerRadius="8"
                 Padding="12,8" Margin="0,0,0,12"
                 Visibility="{Binding SttConfigured, Converter={StaticResource BoolVis}}">
@@ -103,7 +88,7 @@
                        Foreground="#64B5F6" TextWrapping="Wrap" FontSize="11"/>
         </Border>
 
-        <!-- ── Row 1: 툴바 ──────────────────────────────────────────────── -->
+        <!-- ── Row 1: 툴바 ── -->
         <Border Grid.Row="1" Style="{StaticResource CardBorder}" Margin="0,0,0,8">
             <Grid Margin="14,10">
                 <Grid.ColumnDefinitions>
@@ -111,20 +96,25 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- 상태 표시등 + 텍스트 -->
+
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse Width="10" Height="10" Margin="0,0,8,0"
                              Fill="{Binding IsRunning, Converter={StaticResource RunBrush}}"/>
                     <TextBlock Text="{Binding StatusText}"
                                Foreground="{StaticResource TextSecond}" FontSize="12"/>
                 </StackPanel>
-                <!-- 제목 -->
+
                 <TextBlock Grid.Column="1" Text="🎵 오디오 번역"
                            Foreground="{StaticResource TextPrimary}"
                            HorizontalAlignment="Center" FontWeight="SemiBold"
                            VerticalAlignment="Center"/>
-                <!-- 시작/중지 버튼 -->
+
+                <!-- [수정] 자막 레이어 버튼 추가 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="📺 자막 레이어"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding ToggleOverlayCommand}"
+                            Margin="0,0,6,0"/>
                     <Button Content="▶ 시작" Style="{StaticResource PrimaryButton}"
                             Command="{Binding StartCommand}"
                             Visibility="{Binding IsRunning, Converter={StaticResource BoolVisInv}}"
@@ -136,23 +126,17 @@
             </Grid>
         </Border>
 
-        <!-- ── Row 2: VU 미터 (캡처 중일 때만 표시) ────────────────────── -->
-        <!--
-            AudioLevel(0~1) → ProgressBar.Value → PART_Indicator 자동 폭 조절
-            PeakLevel(0~1)  → Canvas.Left 바늘 위치 (피크 홀드, 서서히 감소)
-            AudioLevelDb    → dB 수치 텍스트
-        -->
+        <!-- ── Row 2: VU 미터 ── -->
         <Border Grid.Row="2" Style="{StaticResource CardBorder}"
                 Margin="0,0,0,8"
                 Visibility="{Binding IsRunning, Converter={StaticResource BoolVis}}">
             <Grid Margin="14,8">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="80"/>   <!-- 레이블 -->
-                    <ColumnDefinition Width="*"/>    <!-- 미터 바 -->
-                    <ColumnDefinition Width="56"/>   <!-- dB 수치 -->
+                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="56"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 레이블 -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse Width="7" Height="7" Margin="0,0,5,0">
                         <Ellipse.Style>
@@ -179,12 +163,9 @@
                                FontSize="11" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- 미터 영역: ProgressBar + 피크 바늘 -->
                 <Grid Grid.Column="1" VerticalAlignment="Center" Margin="4,0">
-                    <!-- 그라디언트 바 -->
                     <ProgressBar Style="{StaticResource VuMeterStyle}"
                                  Value="{Binding AudioLevel}"/>
-                    <!-- 피크 바늘 (Canvas 오버레이) -->
                     <Canvas Height="14" ClipToBounds="False">
                         <Rectangle Canvas.Left="{Binding PeakPosition}"
                                    Width="2" Height="14"
@@ -193,7 +174,6 @@
                     </Canvas>
                 </Grid>
 
-                <!-- dB 수치 -->
                 <TextBlock Grid.Column="2" Text="{Binding AudioLevelDb}"
                            Foreground="{StaticResource TextSecond}"
                            FontSize="10" FontFamily="Consolas"
@@ -202,7 +182,7 @@
             </Grid>
         </Border>
 
-        <!-- ── Row 3: 대상 앱 선택 ──────────────────────────────────────── -->
+        <!-- ── Row 3: 대상 앱 선택 ── -->
         <Border Grid.Row="3" Style="{StaticResource CardBorder}" Margin="0,0,0,8">
             <Grid Margin="14,10">
                 <Grid.ColumnDefinitions>
@@ -231,7 +211,7 @@
             </Grid>
         </Border>
 
-        <!-- ── Row 4: 품질 필터 통계 ────────────────────────────────────── -->
+        <!-- ── Row 4: 품질 필터 통계 ── -->
         <Border Grid.Row="4" Background="#1A2233"
                 BorderBrush="{StaticResource BorderColor}"
                 BorderThickness="1" CornerRadius="8"
@@ -255,7 +235,7 @@
             </Grid>
         </Border>
 
-        <!-- ── Row 5: 중간 인식 결과 (실시간 자막) ──────────────────────── -->
+        <!-- ── Row 5: 중간 인식 결과 ── -->
         <Border Grid.Row="5" Background="{StaticResource BgCard}"
                 CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
                 Visibility="{Binding IsRunning, Converter={StaticResource BoolVis}}">
@@ -265,7 +245,7 @@
                        TextWrapping="Wrap" MinHeight="20"/>
         </Border>
 
-        <!-- ── Row 6: 메인 콘텐츠 ───────────────────────────────────────── -->
+        <!-- ── Row 6: 메인 콘텐츠 ── -->
         <Grid Grid.Row="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -273,7 +253,6 @@
                 <ColumnDefinition Width="280"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 원문 / 번역문 패널 -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
