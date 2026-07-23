@@ -24,6 +24,9 @@ public class TranslationRecord
     public bool IsLearned { get; set; }
     /// <summary>NLP 분석 완료 여부 — 한 번 분석된 문장은 재분석 안 함</summary>
     public bool IsAnalyzed { get; set; }
+    /// <summary>[추가] 번역 시점에 캡처된 대상 창 스크린샷 파일 경로 (없으면 null)</summary>
+    public string? ImagePath { get; set; }
+    public bool HasImage => !string.IsNullOrWhiteSpace(ImagePath);
 
     public string CaptureTypeLabel => CaptureType == CaptureType.OCR ? "🖥 OCR" : "🔊 Sound";
     public string DateLabel => CapturedAt.ToString("yyyy-MM-dd");

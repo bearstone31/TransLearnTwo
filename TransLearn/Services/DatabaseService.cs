@@ -16,6 +16,7 @@
 //   GetWordEntriesAsync()          — LearnPriority 기준 단어장 조회
 // ============================================================
 using Microsoft.Data.Sqlite;
+using System.IO;
 using TransLearn.Models;
 
 namespace TransLearn.Services;
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS translations (
     AppName      TEXT    NOT NULL DEFAULT '',
     QualityScore REAL    DEFAULT NULL,
     IsLearned    INTEGER NOT NULL DEFAULT 0,
-    IsAnalyzed   INTEGER NOT NULL DEFAULT 0
+    IsAnalyzed   INTEGER NOT NULL DEFAULT 0,
+    ImagePath    TEXT    DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_type_date
@@ -118,6 +120,9 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         // learned_words.ThumbsUp / ThumbsDown
         await TryAddColumnAsync(conn, "learned_words", "ThumbsUp", "INTEGER NOT NULL DEFAULT 0");
         await TryAddColumnAsync(conn, "learned_words", "ThumbsDown", "INTEGER NOT NULL DEFAULT 0");
+
+        // [추가] translations.ImagePath — 번역 시점 캡처 스크린샷 파일 경로
+        await TryAddColumnAsync(conn, "translations", "ImagePath", "TEXT DEFAULT NULL");
     }
 
     private static async Task TryAddColumnAsync(SqliteConnection conn,
@@ -135,19 +140,20 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
     // ── 번역 INSERT ──────────────────────────────────────────────────────
     public async Task<long> InsertTranslationAsync(
         string original, string translated,
-        CaptureType type, string appName = "")
+        CaptureType type, string appName = "", string? imagePath = null)
     {
         await using var conn = new SqliteConnection(_connStr);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO translations (OriginalText, Translated, CaptureType, AppName)
-            VALUES (@o, @t, @ct, @app)
+            INSERT INTO translations (OriginalText, Translated, CaptureType, AppName, ImagePath)
+            VALUES (@o, @t, @ct, @app, @img)
             RETURNING Id;";
         cmd.Parameters.AddWithValue("@o", original);
         cmd.Parameters.AddWithValue("@t", translated);
         cmd.Parameters.AddWithValue("@ct", (int)type);
         cmd.Parameters.AddWithValue("@app", appName);
+        cmd.Parameters.AddWithValue("@img", imagePath is null ? (object)DBNull.Value : imagePath);
         return (long)(await cmd.ExecuteScalarAsync())!;
     }
 
@@ -164,7 +170,7 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         if (dateFrom is not null) where.Add("CapturedAt >= @from");
 
         var sql = "SELECT Id, CapturedAt, OriginalText, Translated, CaptureType, AppName, " +
-                  "QualityScore, IsLearned, IsAnalyzed FROM translations ";
+                  "QualityScore, IsLearned, IsAnalyzed, ImagePath FROM translations ";
         if (where.Count > 0) sql += "WHERE " + string.Join(" AND ", where) + " ";
         sql += "ORDER BY CapturedAt DESC LIMIT @lim;";
 
@@ -177,6 +183,30 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
             list.Add(ReadTranslation(reader));
+        CleanupMissingImages(list);
+        return list;
+    }
+
+    /// <summary>[추가] 캡처 이미지가 있는 번역 기록만 반환 (캡처 관리 갤러리용)</summary>
+    public async Task<List<TranslationRecord>> GetTranslationsWithImageAsync(int limit = 2000)
+    {
+        await using var conn = new SqliteConnection(_connStr);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, CapturedAt, OriginalText, Translated, CaptureType, AppName,
+                   QualityScore, IsLearned, IsAnalyzed, ImagePath
+            FROM translations
+            WHERE ImagePath IS NOT NULL AND TRIM(ImagePath) <> ''
+            ORDER BY CapturedAt DESC
+            LIMIT @lim;";
+        cmd.Parameters.AddWithValue("@lim", limit);
+
+        var list = new List<TranslationRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            list.Add(ReadTranslation(reader));
+        CleanupMissingImages(list);
         return list;
     }
 
@@ -188,7 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
             SELECT Id, CapturedAt, OriginalText, Translated, CaptureType, AppName,
-                   QualityScore, IsLearned, IsAnalyzed
+                   QualityScore, IsLearned, IsAnalyzed, ImagePath
             FROM translations
             WHERE IsAnalyzed = 0
             ORDER BY CapturedAt DESC
@@ -226,6 +256,7 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         QualityScore = r.IsDBNull(6) ? null : r.GetDouble(6),
         IsLearned = r.GetInt32(7) == 1,
         IsAnalyzed = r.GetInt32(8) == 1,
+        ImagePath = r.IsDBNull(9) ? null : r.GetString(9),
     };
 
     // ── 단어 UPSERT ──────────────────────────────────────────────────────
@@ -371,11 +402,68 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         ThumbsDown = r.IsDBNull(9) ? 0 : r.GetInt32(9),
     };
 
+    // ── [추가] 캡처 파일 자가 치유 ────────────────────────────────────────
+    /// <summary>
+    /// 조회 결과 중 ImagePath는 있지만 실제 파일이 없는(삭제/이동됨) 레코드를 찾아
+    /// 화면에는 즉시 "이미지 없음"으로 보이도록 메모리에서 null 처리하고,
+    /// DB에는 백그라운드로 반영해 이후 조회부터는 다시 확인할 필요가 없게 정리한다.
+    /// File.Exists는 가벼운 호출이라 목록 하나 조회할 때마다 실행해도 부담이 크지 않다.
+    /// </summary>
+    private void CleanupMissingImages(List<TranslationRecord> list)
+    {
+        List<long>? staleIds = null;
+        foreach (var r in list)
+        {
+            if (string.IsNullOrWhiteSpace(r.ImagePath)) continue;
+
+            bool exists;
+            try { exists = File.Exists(r.ImagePath); }
+            catch { exists = false; } // 제거된 드라이브 등 경로 접근 자체가 실패해도 안전하게 처리
+
+            if (!exists)
+            {
+                r.ImagePath = null;
+                (staleIds ??= new List<long>()).Add(r.Id);
+            }
+        }
+
+        if (staleIds is not { Count: > 0 }) return;
+
+        var ids = staleIds;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var conn = new SqliteConnection(_connStr);
+                await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText =
+                    $"UPDATE translations SET ImagePath = NULL WHERE Id IN ({string.Join(",", ids)});";
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch
+            {
+                // 실패해도 다음 조회 때 다시 감지되어 재시도되므로 무시해도 안전하다.
+            }
+        });
+    }
+
     // ── 삭제 / 유지보수 ──────────────────────────────────────────────────
     public async Task DeleteTranslationAsync(long id)
     {
         await using var conn = new SqliteConnection(_connStr);
         await conn.OpenAsync();
+
+        // [추가] 삭제 전에 캡처 이미지 경로를 조회해 파일도 함께 정리한다.
+        string? imagePath = null;
+        await using (var q = conn.CreateCommand())
+        {
+            q.CommandText = "SELECT ImagePath FROM translations WHERE Id = @id;";
+            q.Parameters.AddWithValue("@id", id);
+            var val = await q.ExecuteScalarAsync();
+            imagePath = val as string;
+        }
+
         // learned_words.ExampleId가 이 번역을 참조하고 있으면
         // FK 제약 위반이 발생하므로, 먼저 NULL로 초기화한다.
         await using (var pre = conn.CreateCommand())
@@ -391,6 +479,8 @@ CREATE INDEX IF NOT EXISTS idx_user_memos_date
         cmd.CommandText = "DELETE FROM translations WHERE Id = @id;";
         cmd.Parameters.AddWithValue("@id", id);
         await cmd.ExecuteNonQueryAsync();
+
+        CaptureStorage.TryDelete(imagePath);
     }
     /// <summary>단어장에서 단어 1개를 삭제한다. translations는 그대로 유지.</summary>
     public async Task DeleteWordAsync(long id)

@@ -41,6 +41,12 @@ public partial class App : Application
         Database     = new DatabaseService(dbPath);
         await Database.InitializeAsync();  // 스키마 초기화 + 마이그레이션
 
+        // [추가] 캡처 기능 켜짐/꺼짐 + 저장 위치 설정 로드
+        CaptureSettings.Load();
+        CaptureLog.Write(
+            $"[Startup] CaptureSettings.Enabled={CaptureSettings.Enabled}, " +
+            $"StorageDir={(string.IsNullOrWhiteSpace(CaptureSettings.StorageDir) ? "(기본값) " + CaptureStorage.DefaultRootDir : CaptureSettings.StorageDir)}");
+
         Translation  = new TranslationService();
         OcrCapture   = new OcrCaptureService();
         AudioCapture = new AudioCaptureService(); // WASAPI 준비 (아직 캡처 시작 안 함)
