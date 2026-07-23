@@ -19,6 +19,12 @@ public partial class HistoryViewModel : ObservableObject
     [ObservableProperty] private string _filterType = "전체";
     [ObservableProperty] private int _totalCount;
 
+    /// <summary>[추가] 내부 탭 전환 상태 — false: 번역 기록 목록, true: 캡처 관리(갤러리)</summary>
+    [ObservableProperty] private bool _isGalleryTab;
+
+    [RelayCommand] private void ShowListTab() => IsGalleryTab = false;
+    [RelayCommand] private void ShowGalleryTab() => IsGalleryTab = true;
+
     private ObservableCollection<TranslationRecord> _records = new();
 
     public CollectionViewSource GroupedView { get; } = new();

@@ -49,6 +49,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool   _azureKeySet;
     [ObservableProperty] private string _azureStatus  = "";
 
+    // ── [추가] 캡처(스크린샷) 설정 ───────────────────────────────────────────────
+    [ObservableProperty] private bool   _captureEnabled = true;
+    [ObservableProperty] private string _captureStorageDir = "";
+    [ObservableProperty] private string _captureStatus = "";
+
+    /// <summary>사용자가 별도 폴더를 지정하지 않았을 때 실제로 쓰이는 기본 경로 (UI 안내용)</summary>
+    public string CaptureDefaultDirHint => $"비워두면 기본 위치 사용: {CaptureStorage.DefaultRootDir}";
+
     // ── 생성자 ────────────────────────────────────────────────────────────────
     public SettingsViewModel()
     {
@@ -67,6 +75,10 @@ public partial class SettingsViewModel : ObservableObject
         SelectedSttEngine = SttService.SelectedEngine == SttEngineType.Azure
             ? "Azure STT (클라우드·고정밀)"
             : "Windows 내장 STT (무료·오프라인)";
+
+        // [추가] 캡처 설정 복원 (App.xaml.cs에서 이미 CaptureSettings.Load() 완료된 상태)
+        CaptureEnabled    = CaptureSettings.Enabled;
+        CaptureStorageDir = CaptureSettings.StorageDir;
 
         RefreshSttStatus();
         ApplyTranslationProvider();
@@ -163,6 +175,23 @@ public partial class SettingsViewModel : ObservableObject
     {
         await App.Database.ResetAllAsync();
         ResetStatus = "🗑 모든 번역 기록과 단어장이 초기화되었습니다.";
+    }
+
+    // ── [추가] 캡처(스크린샷) 설정 저장 ──────────────────────────────────────────
+    [RelayCommand]
+    private void SaveCaptureSettings()
+    {
+        CaptureSettings.Save(CaptureEnabled, CaptureStorageDir);
+        CaptureStatus = CaptureEnabled
+            ? "✅ 캡처 설정이 저장되었습니다. (캡처 켜짐)"
+            : "✅ 캡처 설정이 저장되었습니다. (캡처 꺼짐 — 번역 기록은 계속 저장되고, 화면 캡처만 생략됩니다)";
+    }
+
+    [RelayCommand]
+    private void ResetCaptureDir()
+    {
+        CaptureStorageDir = "";
+        CaptureStatus = "폴더 지정을 해제했습니다. 저장을 눌러야 실제로 반영됩니다.";
     }
     private void ApplyTranslationProvider()
     {

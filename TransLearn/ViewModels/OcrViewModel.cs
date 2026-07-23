@@ -202,9 +202,43 @@ public partial class OcrViewModel : ObservableObject
 
                 StatusText = "캡처 중...";
 
+                // [추가] 실제로 번역이 확정된 순간에만 화면을 스크린샷으로 저장.
+                // 창을 선택한 경우 → 그 창 전체(PrintWindow, 최소화돼도 캡처됨)
+                // 창 선택 없이 화면 영역만 쓰는 경우 → 그 화면 영역 자체를 캡처
+                string? imagePath = null;
+                if (TransLearn.Services.CaptureSettings.Enabled)
+                {
+                    try
+                    {
+                        if (useWin)
+                        {
+                            imagePath = await App.OcrCapture.CaptureWindowToFileAsync(
+                                hwnd, TransLearn.Services.CaptureStorage.NewFilePath());
+                        }
+                        else if (_captureRegion.HasValue)
+                        {
+                            imagePath = await App.OcrCapture.CaptureScreenRegionToFileAsync(
+                                _captureRegion.Value, TransLearn.Services.CaptureStorage.NewFilePath());
+                        }
+                        else
+                        {
+                            CaptureLog.Write("[Capture] OCR 캡처 생략: 창도 선택 안 됐고 영역도 없음");
+                        }
+                    }
+                    catch (Exception capEx)
+                    {
+                        CaptureLog.Write($"[Capture] OCR 캡처 예외: {capEx.Message}");
+                        imagePath = null;
+                    }
+                }
+                else
+                {
+                    CaptureLog.Write("[Capture] OCR 캡처 생략: CaptureSettings.Enabled=false (설정에서 꺼져 있음)");
+                }
+
                 _ = Task.Run(() => App.Database.InsertTranslationAsync(
                     result.CleanedText, translated, CaptureType.OCR,
-                    SelectedWindow?.Title ?? "화면 캡처"), ct);
+                    SelectedWindow?.Title ?? "화면 캡처", imagePath), ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

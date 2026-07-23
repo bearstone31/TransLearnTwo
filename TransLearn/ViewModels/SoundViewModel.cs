@@ -337,18 +337,54 @@ public partial class SoundViewModel : ObservableObject
                     ? "Windows STT 인식 중..." : "Azure STT 인식 중...";
 
                 var appName = SelectedApp?.Name ?? "시스템 오디오";
+
+                // [추가] 번역이 확정된 순간, 선택된 앱의 창을 스크린샷으로 저장.
+                // SelectedApp은 지금까지 라벨 용도로만 쓰였으므로 ProcessId로 현재
+                // MainWindowHandle을 다시 조회한다. "전체 시스템 오디오"(ProcessId=-1)이거나
+                // 프로세스가 이미 종료됐거나 창 핸들을 얻을 수 없으면 캡처는 생략한다.
+                string? imagePath = null;
+                if (SelectedApp != null && SelectedApp.ProcessId > 0 && TransLearn.Services.CaptureSettings.Enabled)
+                {
+                    try
+                    {
+                        var proc = Process.GetProcessById(SelectedApp.ProcessId);
+                        var hwnd = proc.MainWindowHandle;
+                        if (hwnd != IntPtr.Zero)
+                        {
+                            imagePath = await App.OcrCapture.CaptureWindowToFileAsync(
+                                hwnd, TransLearn.Services.CaptureStorage.NewFilePath());
+                        }
+                        else
+                        {
+                            CaptureLog.Write(
+                                $"[Capture] Sound 캡처 생략: MainWindowHandle=0 (프로세스가 창을 갖고 있지 않음), ProcessId={SelectedApp.ProcessId}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        CaptureLog.Write($"[Capture] Sound 캡처 예외: {ex.Message}");
+                        imagePath = null;
+                    }
+                }
+                else
+                {
+                    CaptureLog.Write(
+                        $"[Capture] Sound 캡처 생략: SelectedApp={(SelectedApp == null ? "null" : SelectedApp.ProcessId.ToString())}, CaptureSettings.Enabled={TransLearn.Services.CaptureSettings.Enabled}");
+                }
+
                 RecentItems.Insert(0, new TranslationRecord
                 {
                     OriginalText = clean,
                     Translated = translated,
                     CaptureType = CaptureType.Sound,
                     AppName = appName,
-                    CapturedAt = DateTime.Now
+                    CapturedAt = DateTime.Now,
+                    ImagePath = imagePath
                 });
                 while (RecentItems.Count > 100) RecentItems.RemoveAt(RecentItems.Count - 1);
 
                 _ = Task.Run(() => App.Database.InsertTranslationAsync(
-                    clean, translated, CaptureType.Sound, appName));
+                    clean, translated, CaptureType.Sound, appName, imagePath));
             });
         }
     }

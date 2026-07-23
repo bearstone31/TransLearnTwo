@@ -255,7 +255,57 @@
             <!-- STT 카드 끝 ↑ -->
 
             <!-- ══════════════════════════════════════════════════════════ -->
-            <!-- 4. 데이터 초기화  (STT 카드와 독립된 별도 카드)            -->
+            <!-- 4. [추가] 캡처(스크린샷) 설정                              -->
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                <StackPanel Margin="20,16">
+                    <TextBlock Text="🖼 번역 시점 화면 캡처" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4"/>
+                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecond}"
+                               Margin="0,0,0,14" TextWrapping="Wrap">
+                        번역이 확정될 때마다 대상 창을 스크린샷으로 저장해 '캡처 관리' 탭에서 볼 수 있게 합니다.
+                        꺼두면 번역 기록 자체는 그대로 저장되고, 화면 캡처만 생략됩니다.
+                    </TextBlock>
+
+                    <!-- 켜짐/꺼짐 -->
+                    <CheckBox Content="번역 시 화면 캡처 저장"
+                              IsChecked="{Binding CaptureEnabled}"
+                              Foreground="{StaticResource TextPrimary}"
+                              Margin="0,0,0,14"/>
+
+                    <!-- 저장 위치 -->
+                    <TextBlock Text="저장 위치" Foreground="{StaticResource TextSecond}" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding CaptureStorageDir, UpdateSourceTrigger=PropertyChanged}"
+                                 IsReadOnly="True"/>
+                        <Button Grid.Column="2" Content="📁 찾아보기"
+                                Click="BrowseCaptureDir_Click"/>
+                        <Button Grid.Column="4" Content="기본값으로"
+                                Command="{Binding ResetCaptureDirCommand}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding CaptureDefaultDirHint}"
+                               Foreground="{StaticResource TextSecond}" FontSize="11"
+                               Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                    <Button Content="💾 캡처 설정 저장" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding SaveCaptureSettingsCommand}"
+                            HorizontalAlignment="Left"/>
+
+                    <TextBlock Text="{Binding CaptureStatus}" Foreground="{StaticResource TextGreen}"
+                               FontSize="12" Margin="0,8,0,0"
+                               Visibility="{Binding CaptureStatus, Converter={StaticResource NotEmptyVis}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <!-- 5. 데이터 초기화  (STT 카드와 독립된 별도 카드)            -->
             <!-- ══════════════════════════════════════════════════════════ -->
             <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                 <StackPanel Margin="20,16">
