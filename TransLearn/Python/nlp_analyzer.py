@@ -18,12 +18,81 @@ import random
 from collections import Counter
 
 # ── 경로 설정 ────────────────────────────────────────────────────────────
+# BASE_PATH : PyInstaller 가 내부 리소스를 풀어놓는 임시 폴더 (exe 안에 묶은 데이터용)
+# EXE_DIR   : 실행 파일이 실제로 놓인 폴더 (밖에 둔 모델·토크나이저용)
+#
+# exe 로 묶이면 __file__ 은 임시 폴더를 가리키므로, 옆에 둔 큰 파일(345MB ONNX 등)을
+# 찾으려면 sys.executable 기준으로 봐야 한다.
+# .py 로 그냥 실행할 때는 둘 다 스크립트 폴더가 되어 기존 동작과 동일하다.
 def _get_base_path():
     if getattr(sys, 'frozen', False):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
 
+
+def _get_exe_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 BASE_PATH = _get_base_path()
+EXE_DIR   = _get_exe_dir()
+
+# 리소스를 찾을 폴더 목록 (앞에서부터 순서대로 탐색)
+#   EXE_DIR    : onedir 배포 시 exe 와 같은 폴더
+#   EXE_DIR/.. : Python/nlp_analyzer/ 안에 exe, Python/ 아래에 models 가 있는 배치
+#   BASE_PATH  : exe 안에 함께 묶은 경우
+SEARCH_DIRS = [
+    EXE_DIR,
+    os.path.abspath(os.path.join(EXE_DIR, "..")),
+    BASE_PATH,
+]
+
+
+def find_resource(*relative_parts):
+    """SEARCH_DIRS 를 순서대로 뒤져 실제로 존재하는 첫 경로를 반환한다. 없으면 None."""
+    for d in SEARCH_DIRS:
+        candidate = os.path.join(d, *relative_parts)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _resolve_spacy_model():
+    """
+    spaCy 모델 폴더를 찾는다.
+    pip 로 설치된 en_core_web_sm 은 '껍데기 패키지'이고 실제 모델은
+    그 안의 버전 폴더(en_core_web_sm-3.8.0 등)에 들어 있다.
+    config.cfg 가 있는 쪽을 실제 모델로 판단한다.
+    """
+    base = find_resource("en_core_web_sm")
+    if not base:
+        return None
+
+    if os.path.exists(os.path.join(base, "config.cfg")):
+        return base
+
+    try:
+        for name in sorted(os.listdir(base)):
+            sub = os.path.join(base, name)
+            if os.path.isdir(sub) and os.path.exists(os.path.join(sub, "config.cfg")):
+                return sub
+    except Exception:
+        pass
+
+    return None
+
+
+# NLTK 데이터는 사용자 홈 폴더에 다운로드되므로 새 PC 에는 없다.
+# 배포본에 nltk_data 폴더를 함께 넣어두면 여기서 자동으로 잡아준다. (없어도 동작에 지장 없음)
+_nltk_dir = find_resource("nltk_data")
+if _nltk_dir:
+    os.environ["NLTK_DATA"] = _nltk_dir
+    sys.stderr.write(f"[NLP] nltk_data: {_nltk_dir}\n")
+
+sys.stderr.write(f"[NLP] EXE_DIR={EXE_DIR}\n")
+sys.stderr.write(f"[NLP] BASE_PATH={BASE_PATH}\n")
 
 # ── spaCy 초기화 ─────────────────────────────────────────────────────────
 SPACY_AVAILABLE = False
@@ -31,8 +100,9 @@ nlp = None
 
 try:
     import spacy
-    model_path = os.path.join(BASE_PATH, "en_core_web_sm")
-    if os.path.exists(model_path):
+    model_path = _resolve_spacy_model()
+    if model_path:
+        sys.stderr.write(f"[NLP] spaCy 모델: {model_path}\n")
         nlp = spacy.load(model_path)
     else:
         nlp = spacy.load("en_core_web_sm")
@@ -96,6 +166,32 @@ EXCLUDED_MASK_WORDS = {
     "one", "two", "three", "four", "five", "six", "seven", "eight",
     "nine", "ten", "first", "second", "third",
 }
+
+
+# ── 빈칸 처리 헬퍼 ───────────────────────────────────────────────────────
+def _replace_word_form(sentence: str, base_word: str, replacement: str) -> str:
+    """
+    문장에서 base_word 로 시작하는 단어 하나를 replacement 로 바꾼다.
+
+    spaCy 를 쓰면 lemma 가 원형(jump)으로 오는데 문장에는 활용형(jumps)이
+    들어 있다. 단순 치환하면 'The fox _____s over' 처럼 어미가 남으므로,
+    \\w* 를 붙여 뒤따르는 글자까지 함께 지운다.
+    실패하면 원래 방식으로 한 번 더 시도한다.
+    """
+    if not sentence:
+        return sentence
+
+    result = re.sub(
+        r"\b" + re.escape(base_word) + r"\w*", replacement, sentence,
+        count=1, flags=re.IGNORECASE
+    )
+    if replacement in result:
+        return result
+
+    return re.sub(
+        re.escape(base_word), replacement, sentence,
+        count=1, flags=re.IGNORECASE
+    )
 
 
 # ── NLTK POS 태깅으로 단어 품사 판별 ────────────────────────────────────
@@ -179,29 +275,23 @@ try:
     import numpy as np
     from transformers import DistilBertTokenizer
 
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # 여러 경로 순서대로 탐색
-    _candidates = [
-        os.path.join(BASE_PATH, "models", "my_distilbert.onnx"),
-        os.path.join(_script_dir, "models", "my_distilbert.onnx"),
-        os.path.join(_script_dir, "nlp_analyzer", "models", "my_distilbert.onnx"),
-        os.path.join(_script_dir, "..", "models", "my_distilbert.onnx"),
-        os.path.join(_script_dir, "..", "Python", "models", "my_distilbert.onnx"),
-    ]
-
-    onnx_path = next((p for p in _candidates if os.path.exists(p)), None)
+    # SEARCH_DIRS 기준으로 탐색한다 (exe 로 묶여도 정확히 찾는다)
+    onnx_path = find_resource("models", "my_distilbert.onnx")
 
     if onnx_path:
         ort_session = ort.InferenceSession(onnx_path)
-        tokenizer_path = os.path.join(_script_dir, "tokenizer")
-        if not os.path.exists(tokenizer_path):
+
+        tokenizer_path = find_resource("tokenizer")
+        if not tokenizer_path:
+            # 마지막 수단 — 인터넷에서 받아온다 (오프라인이면 실패)
             tokenizer_path = "distilbert-base-uncased"
+            sys.stderr.write("[NLP] 로컬 tokenizer 없음 → 온라인 모델명 사용\n")
+
         hf_tokenizer = DistilBertTokenizer.from_pretrained(tokenizer_path)
         DISTILBERT_AVAILABLE = True
         sys.stderr.write(f"[NLP] myDistilBERT 로드 성공: {onnx_path}\n")
     else:
-        sys.stderr.write(f"[NLP] ONNX 파일 없음 (탐색 경로: {_candidates})\n")
+        sys.stderr.write(f"[NLP] ONNX 파일 없음 (탐색 폴더: {SEARCH_DIRS})\n")
 except Exception as e:
     sys.stderr.write(f"[NLP] myDistilBERT 로드 실패: {e}\n")
 
@@ -227,7 +317,9 @@ def get_distractors(sentence: str, correct: str, difficulty: float = 0.5, n: int
     try:
         import numpy as np
 
-        masked = re.sub(re.escape(correct), "[MASK]", sentence, count=1, flags=re.IGNORECASE)
+        # 원형(jump)과 문장 속 활용형(jumps)이 다를 수 있으므로 어미까지 함께 마스킹한다.
+        # 그러지 않으면 "[MASK]s over ..." 같은 입력이 들어가 오답 품질이 크게 떨어진다.
+        masked = _replace_word_form(sentence, correct, "[MASK]")
         if "[MASK]" not in masked:
             masked = sentence + " [MASK]"
 
@@ -420,9 +512,9 @@ def generate_quiz(entries: list, count: int = 10, difficulty: float = 0.5) -> li
         choices = distractors + [correct]
         random.shuffle(choices)
 
-        blanked = re.sub(
-            re.escape(correct), "_____", sentence, count=1, flags=re.IGNORECASE
-        ) if sentence else f"_____ ({correct})"
+        # 활용형 어미까지 함께 지운다 (jump → "The fox _____ over", not "_____s over")
+        blanked = _replace_word_form(sentence, correct, "_____") if sentence \
+            else f"_____ ({correct})"
 
         quizzes.append({
             "word_id":    entry.get("word_id", 0),
@@ -475,4 +567,4 @@ if __name__ == "__main__":
         print(json.dumps(generate_quiz(data, count, difficulty), ensure_ascii=False))
 
     else:
-        print("[]")
+        print("[]")https://client-api.arkoselabs.com/fc/assets/ec-game-core/game-core/1.37.0/standard/index.html?session=60118c515e85003c7.8172532104&r=ap-southeast-1&meta=7&meta_height=325&metabgclr=%23ffffff&metaiconclr=%23757575&mainbgclr=%23ffffff&maintxtclr=%231B1B1B&guitextcolor=%23747474&lang=ko&pk=B7D8911C-5CC8-A9A3-35B0-554ACEE604DA&at=40&ag=101&cdn_url=https%3A%2F%2Fclient-api.arkoselabs.com%2Fcdn%2Ffc&surl=https%3A%2F%2Fclient-api.arkoselabs.com&smurl=https%3A%2F%2Fclient-api.arkoselabs.com%2Fcdn%2Ffc%2Fassets%2Fstyle-manager#

@@ -16,10 +16,11 @@
 //   Azure   : CognitiveServices.Speech  — 클라우드, 월 5시간 무료 티어
 // ============================================================
 using System.Globalization;
-using System.Speech.Recognition;          // Windows 내장 STT (SpeechRecognitionEngine 등)
-using System.Threading.Channels;
 using System.IO;
 using System.Speech.AudioFormat;
+using System.Speech.Recognition;          // Windows 내장 STT (SpeechRecognitionEngine 등)
+using System.Threading.Channels;
+using System.Xml.Xsl;
 // Azure STT 네임스페이스는 alias로 분리 — System.Speech.Recognition.SpeechRecognizer와
 // Microsoft.CognitiveServices.Speech.SpeechRecognizer 의 모호한 참조를 방지
 using AzureSpeech      = Microsoft.CognitiveServices.Speech;
@@ -239,9 +240,31 @@ internal sealed class AzureSttEngine : ISttEngine, IDisposable
         var cfg = AzureSpeech.SpeechConfig.FromSubscription(key, region);
         cfg.SpeechRecognitionLanguage = "en-US";
 
-        // 500ms 침묵이면 바로 문장 확정 (기존 1500ms)
-        cfg.SetProperty(AzureSpeech.PropertyId.Speech_SegmentationSilenceTimeoutMs, "500");
+        // [수정] 문장 끊기 조건을 환경 설정에서 가져온다.
+        //   침묵 판정 : 이만큼 조용하면 문장 확정
+        //   최대 시간 : 침묵이 없어도 이 시간이 지나면 강제로 끊음 (0 이면 미사용)
+        //   두 조건은 함께 동작하며, 먼저 충족되는 쪽이 문장을 끊는다.
+        cfg.SetProperty(AzureSpeech.PropertyId.Speech_SegmentationSilenceTimeoutMs,
+                        SttSettings.SilenceTimeoutMs.ToString());
 
+        if (SttSettings.MaxSegmentMs > 0)
+        {
+            try
+            {
+                // SDK 버전에 따라 PropertyId 열거형에 없을 수 있어 문자열 이름으로 지정한다.
+                cfg.SetProperty("Speech_SegmentationMaximumTimeMs",
+                                SttSettings.MaxSegmentMs.ToString());
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Stt] 최대 세그먼트 설정 실패(SDK 미지원 가능): {ex.Message}");
+            }
+        }
+
+        System.Diagnostics.Debug.WriteLine(
+            $"[Stt] 세그먼트 설정 적용 — 침묵={SttSettings.SilenceTimeoutMs}ms, " +
+            $"최대={(SttSettings.MaxSegmentMs > 0 ? SttSettings.MaxSegmentMs + "ms" : "미사용")}");
         cfg.SetProperty(AzureSpeech.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText");
         
         _recognizer = new AzureSpeech.SpeechRecognizer(

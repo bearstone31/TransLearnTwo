@@ -18,6 +18,14 @@
     <None Remove="obj\**" />
     <Page Remove="obj\**" />
   </ItemGroup>
+  <ItemGroup>
+    <None Remove="Python\models\my_distilbert.onnx" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Python\models\my_distilbert.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <!-- MVVM Toolkit -->
@@ -44,9 +52,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Python\models\my_distilbert.onnx">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Update="Python\nlp_analyz.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -64,7 +69,15 @@
 	</None>
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Python\dist\" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Update="Python\models\**\*.*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="Python\tokenizer\**\*.*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="Python\*.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
 </Project>
