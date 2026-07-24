@@ -567,4 +567,4 @@ if __name__ == "__main__":
         print(json.dumps(generate_quiz(data, count, difficulty), ensure_ascii=False))
 
     else:
-        print("[]")https://client-api.arkoselabs.com/fc/assets/ec-game-core/game-core/1.37.0/standard/index.html?session=60118c515e85003c7.8172532104&r=ap-southeast-1&meta=7&meta_height=325&metabgclr=%23ffffff&metaiconclr=%23757575&mainbgclr=%23ffffff&maintxtclr=%231B1B1B&guitextcolor=%23747474&lang=ko&pk=B7D8911C-5CC8-A9A3-35B0-554ACEE604DA&at=40&ag=101&cdn_url=https%3A%2F%2Fclient-api.arkoselabs.com%2Fcdn%2Ffc&surl=https%3A%2F%2Fclient-api.arkoselabs.com&smurl=https%3A%2F%2Fclient-api.arkoselabs.com%2Fcdn%2Ffc%2Fassets%2Fstyle-manager#
+        print("[]")
