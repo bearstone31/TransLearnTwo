@@ -74,8 +74,17 @@ public class OcrCaptureService : IDisposable
         Bitmap source = bmp;
         if (region.HasValue)
         {
-            var clamped = Rectangle.Intersect(region.Value, new Rectangle(0, 0, w, h));
+            // region은 화면 기준 좌표이고,
+            // bmp는 선택한 창 기준 좌표이므로 변환해야 한다.
+            var localRegion = new Rectangle(
+                region.Value.X - rect.Left,
+                region.Value.Y - rect.Top,
+                region.Value.Width,
+                region.Value.Height);
+
+            var clamped = Rectangle.Intersect(localRegion, new Rectangle(0, 0, w, h));
             if (clamped.IsEmpty) return "";
+
             source = bmp.Clone(clamped, PixelFormat.Format32bppArgb);
         }
 
@@ -102,13 +111,17 @@ public class OcrCaptureService : IDisposable
     {
         if (_ocrEngine == null) return "[OCR not available]";
 
-        using var ms = new System.IO.MemoryStream();
-        bitmap.Save(ms, ImageFormat.Png);
+        using var ms = new MemoryStream();
+
+        // PNG보다 BMP가 보통 더 빠르다.
+        // 메모리 크기는 커지지만, OCR용 작은 자막 영역에서는 속도 이점이 더 크다.
+        bitmap.Save(ms, ImageFormat.Bmp);
         ms.Position = 0;
 
         var decoder = await BitmapDecoder.CreateAsync(ms.AsRandomAccessStream());
-        var soft    = await decoder.GetSoftwareBitmapAsync();
-        var result  = await _ocrEngine.RecognizeAsync(soft);
+        using var soft = await decoder.GetSoftwareBitmapAsync();
+
+        var result = await _ocrEngine.RecognizeAsync(soft);
         return result.Text.Trim();
     }
 

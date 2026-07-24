@@ -15,6 +15,7 @@ using System.Text;
 using System.Text.Json;
 using System.Web;
 using DeepL;
+using System.Text.RegularExpressions;
 
 namespace TransLearn.Services;
 
@@ -28,6 +29,9 @@ public class TranslationService : IDisposable
 
     private readonly Queue<string> _contextWindow = new();
     private int _contextSize = 3;
+    private readonly Dictionary<string, string> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> _cacheOrder = new();
+    private const int MaxCacheSize = 100;
 
     // Protected terms (abbreviations, proper nouns)
     private readonly Dictionary<string, string> _protected = new()
@@ -48,34 +52,49 @@ public class TranslationService : IDisposable
         }
     }
 
-    public async Task<string> TranslateAsync(string text, string? targetLang = "KO")
+    public TranslationService()
+    {
+        _http.Timeout = TimeSpan.FromSeconds(3);
+    }
+
+    public async Task<string> TranslateAsync(
+     string text,
+     string? targetLang = "KO",
+     CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(text)) return "";
 
-        // 1. Protect terms
-        var protected_ = ProtectTerms(text);
+        if (TryGetCached(text, out var cached))
+            return cached;
 
-        // 2. Build context string
+        ct.ThrowIfCancellationRequested();
+
+        var protected_ = ProtectTerms(text);
         var context = string.Join(" ", _contextWindow.TakeLast(_contextSize));
 
         string result;
         try
         {
             result = _provider == TranslationProvider.DeepL && _deepL != null
-                ? await TranslateDeepLAsync(protected_, context, targetLang!)
-                : await TranslateGoogleAsync(protected_, targetLang!);
+                ? await TranslateDeepLAsync(protected_, context, targetLang!, ct)
+                : await TranslateGoogleAsync(protected_, targetLang!, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Translation error: {ex.Message}");
-            // Fallback to Google
-            result = await TranslateGoogleAsync(protected_, targetLang!);
+            result = await TranslateGoogleAsync(protected_, targetLang!, ct);
         }
 
-        // 3. Restore terms
+        ct.ThrowIfCancellationRequested();
+
         result = RestoreTerms(result);
 
-        // 4. Update context window
+        AddCache(text, result);
+
         _contextWindow.Enqueue(text);
         while (_contextWindow.Count > _contextSize)
             _contextWindow.Dequeue();
@@ -83,36 +102,52 @@ public class TranslationService : IDisposable
         return result;
     }
 
-    private async Task<string> TranslateDeepLAsync(string text, string context, string targetLang)
+    private async Task<string> TranslateDeepLAsync(
+       string text,
+       string context,
+       string targetLang,
+       CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         var opts = new TextTranslateOptions
         {
             Context = string.IsNullOrEmpty(context) ? null : context
         };
-        var res = await _deepL!.TranslateTextAsync(text,
+
+        var res = await _deepL!.TranslateTextAsync(
+            text,
             sourceLanguageCode: null,
             targetLanguageCode: targetLang,
             opts);
+
+        ct.ThrowIfCancellationRequested();
+
         return res.Text;
     }
 
-    private async Task<string> TranslateGoogleAsync(string text, string targetLang)
+    private async Task<string> TranslateGoogleAsync(
+     string text,
+     string targetLang,
+     CancellationToken ct)
     {
-        // Google Translate unofficial endpoint (no key needed for basic use)
         var lang = targetLang.ToLower() == "ko" ? "ko" : targetLang.ToLower();
-        var url = $"https://translate.googleapis.com/translate_a/single" +
-                  $"?client=gtx&sl=auto&tl={lang}&dt=t&q={HttpUtility.UrlEncode(text)}";
-        var resp = await _http.GetStringAsync(url);
 
-        // Parse [[["translated","original",...],...],...]
+        var url = $"https://translate.googleapis.com/translate_a/single" +
+                  $"?client=gtx&sl=en&tl={lang}&dt=t&q={HttpUtility.UrlEncode(text)}";
+
+        var resp = await _http.GetStringAsync(url, ct);
+
         var sb = new StringBuilder();
         using var doc = JsonDocument.Parse(resp);
         var arr = doc.RootElement[0];
+
         foreach (var item in arr.EnumerateArray())
         {
             if (item[0].ValueKind == JsonValueKind.String)
                 sb.Append(item[0].GetString());
         }
+
         return sb.ToString();
     }
 
@@ -128,6 +163,42 @@ public class TranslationService : IDisposable
         foreach (var (term, ph) in _protected)
             text = text.Replace(ph, term);
         return text;
+    }
+
+    private static string CacheKey(string text)
+    {
+        return Regex.Replace(text.Trim().ToLowerInvariant(), @"\s+", " ");
+    }
+
+    private bool TryGetCached(string text, out string translated)
+    {
+        var key = CacheKey(text);
+
+        if (_cache.TryGetValue(key, out var value))
+        {
+            translated = value;
+            return true;
+        }
+
+        translated = "";
+        return false;
+    }
+
+    private void AddCache(string text, string translated)
+    {
+        var key = CacheKey(text);
+
+        if (_cache.ContainsKey(key))
+            return;
+
+        _cache[key] = translated;
+        _cacheOrder.Enqueue(key);
+
+        while (_cacheOrder.Count > MaxCacheSize)
+        {
+            var oldKey = _cacheOrder.Dequeue();
+            _cache.Remove(oldKey);
+        }
     }
 
     public void Dispose()

@@ -11,6 +11,7 @@ using System.Drawing;
 using TransLearn.Models;
 using TransLearn.Services;
 using TransLearn.Views;
+using System.Diagnostics;
 
 namespace TransLearn.ViewModels;
 
@@ -59,6 +60,28 @@ public partial class OcrViewModel : ObservableObject
 
     private readonly Queue<HashSet<string>> _recentTokenSets = new();
     private const int SimilarityWindowSize = 3;
+    private const int CaptureIntervalMs = 400;   // 번역 API를 기다리지 않고 다음 OCR로 넘어가기 위한 짧은 주기
+    private const int RejectIntervalMs = 250;    // 폐기/중복 시 대기시간
+
+    // 번역은 취소하지 않고 큐에서 순서대로 처리한다.
+    // 목적: OCR 루프는 빠르게 유지하되, 번역기록 누락을 막는다.
+    private readonly Queue<OcrTranslationJob> _translationQueue = new();
+    private readonly SemaphoreSlim _translationSignal = new(0);
+    private readonly object _translationQueueLock = new();
+    private Task? _translationWorkerTask;
+    private int _translationSeq = 0;
+    private int _latestOverlaySeq = 0;
+
+    private sealed record OcrTranslationJob(
+        int Seq,
+        string OriginalText,
+        string AppName
+    );
+
+    private static void OcrLog(string message)
+    {
+        Debug.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {message}");
+    }
 
     // ── 창 목록 새로고침 ──────────────────────────────────────────────────
     [RelayCommand]
@@ -134,7 +157,19 @@ public partial class OcrViewModel : ObservableObject
         TotalCaptures = 0;
         DiscardedCount = 0;
         _recentTokenSets.Clear();
+
+
+        // 번역 API 미리 호출해서 첫 번역 지연 줄이기
+        _ = App.Translation.TranslateAsync("hello", "KO");
+
+        lock (_translationQueueLock)
+        {
+            _translationQueue.Clear();
+        }
+
         _cts = new CancellationTokenSource();
+        _translationWorkerTask = Task.Run(() => ProcessTranslationQueueAsync(_cts.Token));
+
         try { await RunCaptureLoopAsync(_cts.Token); }
         catch (OperationCanceledException) { }
         finally { IsRunning = false; StatusText = "중지됨"; }
@@ -144,18 +179,29 @@ public partial class OcrViewModel : ObservableObject
     {
         while (!ct.IsCancellationRequested)
         {
-            if (IsPaused) { await Task.Delay(500, ct); continue; }
+            if (IsPaused)
+            {
+                await Task.Delay(200, ct);
+                continue;
+            }
 
             try
             {
+                var sw = Stopwatch.StartNew();
+
                 var hwnd = SelectedWindow?.Hwnd ?? IntPtr.Zero;
                 bool useWin = hwnd != IntPtr.Zero;
 
                 string raw;
+
                 if (useWin)
+                {
                     raw = await App.OcrCapture.CaptureAndRecognizeAsync(hwnd, _captureRegion);
+                }
                 else if (_captureRegion.HasValue)
+                {
                     raw = await App.OcrCapture.CaptureScreenRegionAsync(_captureRegion.Value);
+                }
                 else
                 {
                     StatusText = "캡처 영역 또는 대상 창을 선택해 주세요.";
@@ -163,28 +209,41 @@ public partial class OcrViewModel : ObservableObject
                     continue;
                 }
 
+                OcrLog($"[OCR TIME] 캡처+OCR: {sw.ElapsedMilliseconds}ms");
+
                 TotalCaptures++;
 
                 var result = _filter.Evaluate(raw, CaptureSource.OCR);
+
+                OcrLog($"[OCR TIME] 품질검사: {sw.ElapsedMilliseconds}ms");
+
                 if (!result.Passed)
                 {
                     DiscardedCount++;
                     LastRejectReason = $"폐기: {result.ReasonDetail}";
                     OnPropertyChanged(nameof(DiscardRateText));
-                    await Task.Delay(1500, ct);
+
+                    OcrLog($"[OCR TIME] 전체(폐기): {sw.ElapsedMilliseconds}ms / reason={result.ReasonDetail}");
+
+                    await Task.Delay(RejectIntervalMs, ct);
                     continue;
                 }
 
                 var tokens = Tokenize(result.CleanedText);
                 var similarity = MaxJaccard(tokens);
+
+                OcrLog($"[OCR TIME] 유사도검사: {sw.ElapsedMilliseconds}ms");
+
                 if (similarity >= SimilarityThreshold)
                 {
                     DiscardedCount++;
                     LastRejectReason = $"유사 중복 폐기 (유사도 {similarity:P0} ≥ {SimilarityThreshold:P0})";
                     OnPropertyChanged(nameof(DiscardRateText));
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[OCR SIMILAR] similarity={similarity:F2}: \"{result.CleanedText[..Math.Min(40, result.CleanedText.Length)]}...\"");
-                    await Task.Delay(1500, ct);
+
+                    OcrLog($"[OCR SIMILAR] similarity={similarity:F2}: \"{result.CleanedText[..Math.Min(40, result.CleanedText.Length)]}...\"");
+                    OcrLog($"[OCR TIME] 전체(유사중복): {sw.ElapsedMilliseconds}ms");
+
+                    await Task.Delay(RejectIntervalMs, ct);
                     continue;
                 }
 
@@ -194,26 +253,116 @@ public partial class OcrViewModel : ObservableObject
 
                 OriginalText = result.CleanedText;
                 LastRejectReason = "";
-                StatusText = "번역 중...";
+                StatusText = "번역 요청 중...";
                 OnPropertyChanged(nameof(DiscardRateText));
 
-                var translated = await App.Translation.TranslateAsync(result.CleanedText);
-                TranslatedText = translated; // ← OnTranslatedTextChanged가 자동으로 오버레이 업데이트
+                EnqueueTranslation(
+                    result.CleanedText,
+                    SelectedWindow?.Title ?? "화면 캡처");
 
-                StatusText = "캡처 중...";
-
-                _ = Task.Run(() => App.Database.InsertTranslationAsync(
-                    result.CleanedText, translated, CaptureType.OCR,
-                    SelectedWindow?.Title ?? "화면 캡처"), ct);
+                OcrLog($"[OCR TIME] 전체(OCR루프/번역요청까지): {sw.ElapsedMilliseconds}ms");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 StatusText = $"오류: {ex.Message}";
             }
 
-            await Task.Delay(1500, ct);
+            await Task.Delay(CaptureIntervalMs, ct);
         }
     }
+
+    private void EnqueueTranslation(string cleanedText, string appName)
+    {
+        var seq = Interlocked.Increment(ref _translationSeq);
+
+        // 오버레이는 최신 자막만 표시하기 위해 최신 번호만 갱신한다.
+        // 번역 자체는 취소하지 않으므로 번역기록 누락 위험이 줄어든다.
+        Interlocked.Exchange(ref _latestOverlaySeq, seq);
+
+        var job = new OcrTranslationJob(
+            Seq: seq,
+            OriginalText: cleanedText,
+            AppName: appName
+        );
+
+        lock (_translationQueueLock)
+        {
+            _translationQueue.Enqueue(job);
+        }
+
+        _translationSignal.Release();
+
+        OcrLog($"[OCR QUEUE] 번역 큐 추가 seq={seq}: \"{cleanedText[..Math.Min(40, cleanedText.Length)]}...\"");
+    }
+
+    private async Task ProcessTranslationQueueAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            OcrTranslationJob job;
+
+            try
+            {
+                await _translationSignal.WaitAsync(ct);
+
+                lock (_translationQueueLock)
+                {
+                    if (!_translationQueue.TryDequeue(out job!))
+                        continue;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            var sw = Stopwatch.StartNew();
+
+            try
+            {
+                var translated = await App.Translation.TranslateAsync(job.OriginalText, "KO", ct);
+
+                OcrLog($"[OCR TIME] 번역 seq={job.Seq}: {sw.ElapsedMilliseconds}ms");
+
+                var latestSeq = Volatile.Read(ref _latestOverlaySeq);
+
+                if (job.Seq == latestSeq)
+                {
+                    await App.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        TranslatedText = translated;
+                        StatusText = "캡처 중...";
+                    });
+
+                    OcrLog($"[OCR TIME] 오버레이 표시 seq={job.Seq}: {sw.ElapsedMilliseconds}ms");
+                }
+                else
+                {
+                    OcrLog($"[OCR RECORD] 기록 저장 예정 seq={job.Seq}, 최신 seq={latestSeq}");
+                }
+
+                // 속도 최적화를 위해 OCR 루프에서는 DB 저장을 기다리지 않는다.
+                // 대신 번역 작업자 안에서는 await 해서 기록 저장 자체는 보장한다.
+                await App.Database.InsertTranslationAsync(
+                    job.OriginalText,
+                    translated,
+                    CaptureType.OCR,
+                    job.AppName);
+
+                OcrLog($"[OCR DB] 번역기록 저장 완료 seq={job.Seq}");
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                OcrLog($"[OCR ERROR] 번역/저장 실패 seq={job.Seq}: {ex.Message}");
+            }
+        }
+    }
+
+
 
     // ── 유사도 헬퍼 ──────────────────────────────────────────────────────
     private static HashSet<string> Tokenize(string text)
@@ -245,7 +394,13 @@ public partial class OcrViewModel : ObservableObject
 
     // ── 커맨드 ───────────────────────────────────────────────────────────
     [RelayCommand] private void Pause() => IsPaused = !IsPaused;
-    [RelayCommand] private void Stop() { _cts?.Cancel(); IsRunning = false; IsPaused = false; }
+    [RelayCommand]
+    private void Stop()
+    {
+        _cts?.Cancel();
+        IsRunning = false;
+        IsPaused = false;
+    }
 
     [RelayCommand]
     private void ResetStats()
