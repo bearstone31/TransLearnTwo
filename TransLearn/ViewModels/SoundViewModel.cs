@@ -9,10 +9,11 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Xml.Xsl;
 using TransLearn.Models;
 using TransLearn.Services;
-using System.ComponentModel;
 using TransLearn.Views;
 
 namespace TransLearn.ViewModels;
@@ -235,8 +236,41 @@ public partial class SoundViewModel : ObservableObject
 
     partial void OnTranslatedTextChanged(string value)
     {
+        // [수정] 자막 레이어에는 최근 N문장만 보낸다.
+        //        아래 번역문 패널에는 전체가 그대로 남는다.
         if (_overlayWindow?.IsVisible == true)
-            _overlayWindow.UpdateTranslation(value);
+            _overlayWindow.UpdateTranslation(TrimForSubtitle(value));
+    }
+
+    /// <summary>
+    /// [추가] 자막이 책처럼 길어지는 것을 막는 안전망.
+    /// 화자가 쉬지 않고 말하면 Azure가 한 발화를 길게 보내는데,
+    /// 그대로 표시하면 자막 레이어가 문단이 되어 버린다.
+    /// 마지막 N문장만 남기고 잘라낸다.
+    /// </summary>
+    private static string TrimForSubtitle(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text;
+
+        var max = SttSettings.SubtitleMaxSentences;
+
+        // 마침표·물음표·느낌표 뒤에서 자른다 (한국어 문장 부호 포함)
+        var parts = System.Text.RegularExpressions.Regex
+            .Split(text.Trim(), @"(?<=[.!?。！？])\s+")
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        if (parts.Count > max)
+            parts = parts.Skip(parts.Count - max).ToList();
+
+        var result = string.Join(" ", parts);
+
+        // 문장 부호가 하나도 없어 못 자른 경우를 위한 최후 수단 (문장당 90자 기준)
+        var hardLimit = max * 90;
+        if (result.Length > hardLimit)
+            result = "… " + result[^hardLimit..];
+
+        return result;
     }
 
     // ── 시작 / 중지 ──────────────────────────────────────────────────────────

@@ -407,3 +407,9 @@ FodyWeavers.xsd
 **/*.spec
 __pycache__/
 *.pyc
+
+# PyInstaller 빌드 결과 (배포는 Releases로)
+TransLearn/Python/nlp_analyzer/
+TransLearn/Python/dist/
+TransLearn/Python/build/
+TransLearn/Python/*.spec

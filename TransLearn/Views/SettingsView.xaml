@@ -5,9 +5,11 @@
     섹션 구성
       1. 번역 설정      — 번역 방법(Google/DeepL) + 문맥 크기
       2. DeepL API 키   — PasswordBox + DPAPI 저장
-      3. STT 엔진 설정  — Windows 내장 STT / Azure STT 선택 + 저장
-         └ Azure 키 섹션 — Azure STT 선택 시만 표시
-      4. 데이터 초기화  — 전체 DB 삭제 (독립 카드)
+      3. STT 엔진 설정  — 엔진 선택 + Azure 키 (현재 Azure만 노출)
+      4. 문장 끊기 설정 — 침묵 판정 / 최대 세그먼트 / 자막 문장 수
+      5. 캡처 설정      — 번역 시점 화면 캡처 on/off + 저장 위치
+      6. 기억노트       — 교정 사전 txt 불러오기 / 편집 / on-off
+      7. 데이터 초기화  — 전체 DB 삭제 (독립 카드)
 -->
 <Page x:Class="TransLearn.Views.SettingsView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -147,8 +149,8 @@
                                Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4"/>
                     <TextBlock FontSize="11" Foreground="{StaticResource TextSecond}"
                                Margin="0,0,0,14" TextWrapping="Wrap">
-                        Windows 내장 STT는 API 키 없이 무료로 사용할 수 있습니다.
-                        Azure STT는 클라우드 처리로 더 높은 정확도를 제공합니다 (월 5시간 무료).
+                        Azure STT를 사용합니다. 클라우드 처리로 높은 정확도를 제공하며 월 5시간 무료입니다.
+                        아래에서 API 키를 등록해 주세요.
                     </TextBlock>
 
                     <!-- 엔진 선택 ComboBox -->
@@ -255,7 +257,105 @@
             <!-- STT 카드 끝 ↑ -->
 
             <!-- ══════════════════════════════════════════════════════════ -->
-            <!-- 4. [추가] 캡처(스크린샷) 설정                              -->
+            <!-- 4. [추가] 문장 끊기 설정                                    -->
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                <StackPanel Margin="20,16">
+                    <TextBlock Text="✂️ 문장 끊기 / 자막 표시" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4"/>
+                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecond}"
+                               Margin="0,0,0,14" TextWrapping="Wrap">
+                        화자가 쉬지 않고 말하면 한 문장이 길어져 자막이 문단처럼 됩니다.
+                        아래 두 조건은 함께 동작하며, 먼저 충족되는 쪽이 문장을 끊습니다.
+                    </TextBlock>
+
+                    <!-- 침묵 판정 시간 -->
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="침묵 판정 시간" Foreground="{StaticResource TextSecond}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Slider Minimum="200" Maximum="2000"
+                                    TickFrequency="50" IsSnapToTickEnabled="True"
+                                    Value="{Binding SttSilenceTimeoutMs}"
+                                    Width="220" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SttSilenceLabel}" Margin="10,0,0,0"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       VerticalAlignment="Center" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Foreground="{StaticResource TextSecond}" FontSize="11"
+                               Margin="140,0,0,14" TextWrapping="Wrap">
+                        이만큼 조용해지면 문장을 확정합니다. 짧을수록 자막이 자주 갱신되지만,
+                        250ms 아래로 내리면 단어 중간에 잘릴 수 있습니다. (권장 300~500)
+                    </TextBlock>
+
+                    <!-- 최대 세그먼트 시간 -->
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="강제 끊기" Foreground="{StaticResource TextSecond}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Slider Minimum="0" Maximum="15000"
+                                    TickFrequency="1000" IsSnapToTickEnabled="True"
+                                    Value="{Binding SttMaxSegmentMs}"
+                                    Width="220" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SttMaxSegmentLabel}" Margin="10,0,0,0"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       VerticalAlignment="Center" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Foreground="{StaticResource TextSecond}" FontSize="11"
+                               Margin="140,0,0,14" TextWrapping="Wrap">
+                        침묵이 없어도 이 시간이 지나면 강제로 끊습니다. 0이면 사용하지 않습니다.
+                        말이 빠른 영상에 효과적입니다. (권장 5초)
+                    </TextBlock>
+
+                    <!-- 자막 문장 수 -->
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="자막 문장 수" Foreground="{StaticResource TextSecond}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Slider Minimum="1" Maximum="5"
+                                    TickFrequency="1" IsSnapToTickEnabled="True"
+                                    Value="{Binding SubtitleMaxSentences}"
+                                    Width="220" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SubtitleMaxLabel}" Margin="10,0,0,0"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       VerticalAlignment="Center" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Foreground="{StaticResource TextSecond}" FontSize="11"
+                               Margin="140,0,0,14" TextWrapping="Wrap">
+                        자막 레이어에 한 번에 표시할 최대 문장 수입니다. 넘치면 오래된 문장부터 사라집니다.
+                        아래 '번역문' 패널에는 전체가 그대로 남습니다.
+                    </TextBlock>
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="💾 문장 끊기 설정 저장" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding SaveSttSegmentCommand}" Margin="0,0,8,0"/>
+                        <Button Content="기본값으로"
+                                Command="{Binding ResetSttSegmentCommand}"/>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding SttSegmentStatus}" Foreground="{StaticResource TextGreen}"
+                               FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Visibility="{Binding SttSegmentStatus, Converter={StaticResource NotEmptyVis}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <!-- 5. [추가] 캡처(스크린샷) 설정                              -->
             <!-- ══════════════════════════════════════════════════════════ -->
             <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                 <StackPanel Margin="20,16">
@@ -305,7 +405,88 @@
             </Border>
 
             <!-- ══════════════════════════════════════════════════════════ -->
-            <!-- 5. 데이터 초기화  (STT 카드와 독립된 별도 카드)            -->
+            <!-- 6. [추가] 기억노트 (교정 사전)                             -->
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                <StackPanel Margin="20,16">
+                    <TextBlock Text="📓 기억노트 (교정 사전)" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4"/>
+                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecond}"
+                               Margin="0,0,0,14" TextWrapping="Wrap">
+                        특정 단어의 번역을 고정합니다. 예를 들어 max → 맥스 로 등록하면
+                        앞으로 모든 max 가 '최대'가 아닌 '맥스'로 번역됩니다.
+                        사람 이름, 고유명사, 게임 용어처럼 일반 번역이 곤란한 단어에 사용하세요.
+                    </TextBlock>
+
+                    <!-- 사용 여부 -->
+                    <CheckBox Content="기억노트 사용"
+                              IsChecked="{Binding MemoryNoteEnabled}"
+                              Foreground="{StaticResource TextPrimary}"
+                              Margin="0,0,0,8"/>
+
+                    <CheckBox Content="단어 단위로 교정 (완벽히 일치하는 단어만)"
+                              IsChecked="{Binding MemoryNoteWholeWord}"
+                              IsEnabled="{Binding MemoryNoteEnabled}"
+                              Foreground="{StaticResource TextPrimary}"
+                              Margin="0,0,0,14"/>
+
+                    <!-- 등록된 단어 목록 -->
+                    <TextBlock Text="등록된 단어" Foreground="{StaticResource TextSecond}"
+                               Margin="0,0,0,4"/>
+                    <Border Background="{StaticResource BgInput}" CornerRadius="6"
+                            Padding="10,8" Margin="0,0,0,12" MinHeight="60">
+                        <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding MemoryNotes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Source}"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="1" Text="  →  "
+                                                       Foreground="{StaticResource TextSecond}"
+                                                       FontSize="12"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Target}"
+                                                       Foreground="{StaticResource TextGreen}"
+                                                       FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- 버튼 3종 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <Button Content="📂 txt 파일 불러오기" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding ImportMemoryNoteCommand}" Margin="0,0,8,0"/>
+                        <Button Content="📝 편집" Command="{Binding OpenMemoryNoteFileCommand}"
+                                Margin="0,0,8,0"/>
+                        <Button Content="🔄 다시 불러오기" Command="{Binding ReloadMemoryNoteCommand}"/>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding MemoryNoteStatus}" Foreground="{StaticResource TextGreen}"
+                               FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Visibility="{Binding MemoryNoteStatus, Converter={StaticResource NotEmptyVis}}"/>
+
+                    <TextBlock Text="{Binding MemoryNotePath}" Foreground="{StaticResource TextSecond}"
+                               FontSize="10" Margin="0,6,0,0" TextWrapping="Wrap"/>
+
+                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecond}"
+                               Margin="0,10,0,0" TextWrapping="Wrap">
+                        txt 파일 형식: 한 줄에 하나씩 '대상단어 [Tab] 고정번역'.
+                        '#' 로 시작하는 줄은 설명으로 무시됩니다.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- ══════════════════════════════════════════════════════════ -->
+            <!-- 7. 데이터 초기화  (독립 카드)                              -->
             <!-- ══════════════════════════════════════════════════════════ -->
             <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                 <StackPanel Margin="20,16">
